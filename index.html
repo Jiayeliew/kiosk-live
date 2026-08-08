@@ -1,0 +1,2921 @@
+<!--
+  Tong Ah Kiosk Dashboard — Cut 1, first frontend cut: THE LOGIN SCREEN.
+  Created 2026-08-06 as a verification page. Rewritten 2026-08-08 into the real
+  login screen (chat 15).
+
+  ★ WHAT THIS IS
+    The login screen and nothing behind it yet. It gets a token and shows which
+    store that token belongs to. It reads no sales, no stock and no attendance.
+    There is no dashboard here — that is a later cut.
+
+  ★ WHO CAN SEE THIS
+    Nobody. This repository is PRIVATE and GitHub Pages is OFF. This file has
+    not been published, and this cut does not publish it. The 19 stores have
+    not been given anything and cannot reach this page.
+
+  ★ THE BACKEND IT TALKS TO
+    Deployment id : AKfycbwhNuIoDSgI_mwYEWkrdbbVJlkYjFMNwyc0ZwlGLphp42ebVyfn0pF3DV0WsSDeXulzNA
+    Version       : @10 (redeployed onto the same id every time — KD-034)
+    That deployment serves doPost only. There is no doGet (KD-028 item 1).
+
+  ★ KB-004. The backend URL is a constant in this file and there is NO settings
+    screen. The inherited system showed the backend URL to every store worker on
+    a settings page — which handed each of them the ability to point the tablet
+    somewhere else, or to read the URL off the screen and call the door directly.
+    A URL that cannot be seen or edited from the page cannot be taken from it.
+
+  ★ KD-006. The request is sent as text/plain on purpose. It is the shape the
+    Raya write path already ran in production, and it is the shape that does not
+    make the browser send a CORS preflight. Do not add headers to these calls.
+
+  ★★ KD-028 item 3 — THE REASON THIS PAGE NEVER SAYS "WRONG PASSWORD".
+    Every failure the backend emits is byte for byte identical:
+    {"ok":false,"error":"INVALID"}. An address that is not in the system, a
+    wrong password, and a caller who has been rate limited all produce THE SAME
+    VALUE — src/Api.js:618 and src/Api.js:621 both return the same no-argument
+    apiFailure_(), so there is nothing to tell apart. This page must therefore
+    describe all three causes and must not assert any one of them.
+
+  ★★ AND IT MUST SEPARATE "the backend refused me" FROM "I never reached the
+    backend". Those are two different illnesses with two different actions, and
+    from a raw response alone they are easy to confuse: anything that is not the
+    door's JSON (a Google error page, a captive portal, a proxy) is a CONNECTION
+    problem and is NEVER reported as INVALID. Somebody reading dead wifi as a
+    rejected password goes looking for the wrong problem.
+
+  ★ THE TOKEN IS IN localStorage (changed 2026-08-08). It used to live in one
+    variable that died on refresh, which was right for a page you open once by
+    hand and wrong for a tablet that a promoter reloads. Sessions expire at a
+    FIXED INSTANT read from HQ MASTER SETTINGS.SESSION_EXPIRY (src/Auth.js:249),
+    so every store's token dies in the same second — which is exactly why the
+    stored token is re-checked with whoami on every page load and cleared in
+    silence when it is dead. A stale token must never surface as an error.
+
+  ★ No password is ever logged, displayed, stored, or put in a URL by this file.
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tong Ah Kiosk — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  /* ★★ EVERY RULE IN THIS BLOCK IS SCOPED TO THE LOGIN SCREEN. The dashboard's
+     CSS (the block below, from legacy/raya2026/index.html:8-409) is the product
+     and must win: it resets `*` and restyles html,body. A bare `body`, `input`,
+     `button` or `label` rule here would reach into the dashboard's own markup
+     instead — legacy/raya2026/index.html:599, :600, :2128 and :2129 are
+     class-less buttons that a bare `button` rule would push around. */
+  h1, #loginView, #headline, #message {
+    font-family: Arial, sans-serif; max-width: 760px;
+    margin-left: 24px; margin-right: 24px;
+  }
+  #loginView, #headline, #message { font-size: 18px; }
+  h1 { font-size: 32px; margin-top: 24px; margin-bottom: 16px; }
+
+  #loginView label  { display: block; margin-top: 16px; font-weight: bold; }
+  #loginView input  { font-size: 20px; padding: 8px; width: 100%;
+                      box-sizing: border-box; }
+  #loginView button { font-size: 20px; padding: 12px 20px; margin-top: 20px; }
+
+  /* ★ The first :disabled rule in this project. legacy/raya2026/index.html has
+     none anywhere in its 402-line <style>, and its doCapture button at :1602
+     only dropped opacity — which does not stop a tap. KB-038: the promoter must
+     be able to SEE that the button is spent, or he taps it five times, trips the
+     limiter, and gets the same INVALID a wrong password gives. */
+  #loginView button:disabled {
+    background: #d8d8d8; color: #777; border: 1px solid #bbb;
+    cursor: not-allowed;
+  }
+  #loginView input:disabled { background: #f0f0f0; color: #777; }
+
+  #headline { font-size: 30px; font-weight: bold; margin-top: 28px;
+              line-height: 1.3; }
+  #message  { font-size: 17px; line-height: 1.6; margin-top: 12px;
+              white-space: pre-wrap; }
+  /* ★ Narrowed to these two ids on purpose. A bare `.ok` would paint text green
+     on the dashboard's own second-class usage — legacy/raya2026/index.html has
+     class="sum-chip ok", class="reorder-card ok", class="rc-qty ok" and writes
+     className="punch-status ok" at :1658. */
+  #headline.fail, #message.fail { color: #b00000; }
+  #headline.ok,   #message.ok   { color: #006400; }
+  #headline.wait, #message.wait { color: #555; }
+  #loginView .note { color: #555; font-size: 14px; }
+  /* ★ Stays global: it is what hides #sessionView itself. Nothing in the
+     dashboard uses this class name. */
+  .hidden { display: none; }
+</style>
+
+<style>
+  :root {
+    --bg:#ffffff; --surface:#fafafa; --surface2:#f3f3f3;
+    --border:#e8e8e8; --border2:#d0d0d0;
+    --text:#111111; --muted:#999999; --muted2:#cccccc;
+    --gold:#c8960c; --gold-bg:#fdf8ec; --gold-border:#f0d87a;
+    --green:#1a9a5a; --green-bg:#edfaf3; --green-border:#a3dfbf;
+    --red:#d63b3b; --red-bg:#fff0f0; --red-border:#fca5a5;
+    --blue:#1a6bc8; --blue-bg:#edf4fd; --blue-border:#b3d1f7;
+    --amber:#d97706; --amber-bg:#fff8ec; --amber-border:#fcd97a;
+    --purple:#7c3aed; --purple-bg:#f5f3ff; --purple-border:#c4b5fd;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:100%;background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;}
+
+  /* ── Topbar ── */
+  .topbar{height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:var(--bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;}
+  .brand{font-family:'Playfair Display',serif;font-size:17px;font-weight:900;letter-spacing:1px;
+         min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .brand span{color:var(--gold);}
+  /* ★ P2. The store is the thing a promoter must be able to check at a glance —
+     it is the one fact that says this tablet is pointed at the right shop. The
+     season name is context and stays quiet. */
+  #topStore{color:var(--text);font-family:'DM Sans',sans-serif;font-weight:600;
+            font-size:14px;letter-spacing:0;}
+  /* ★ The separators are written by JS together with the value, so an absent
+     store or a null event_name leaves no orphan " · " behind. */
+  #topEvent{color:var(--gold);font-family:'DM Mono',monospace;font-weight:400;
+            font-size:10px;letter-spacing:1px;}
+  .build-tag{font-family:'DM Mono',monospace;font-size:9px;color:var(--muted2);
+             letter-spacing:1px;user-select:all;}
+  .topbar-logout{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;
+                 color:var(--muted);background:var(--surface2);
+                 border:1px solid var(--border2);border-radius:7px;
+                 padding:5px 10px;cursor:pointer;white-space:nowrap;}
+  .topbar-logout:hover{color:var(--red);border-color:var(--red);}
+  .tb-clock{font-family:'DM Mono',monospace;font-size:17px;font-weight:500;letter-spacing:2px;}
+  .tb-right{display:flex;align-items:center;gap:10px;}
+  .tb-date{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);}
+  .sync-pill{display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:20px;background:var(--surface2);border:1px solid var(--border2);cursor:pointer;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px;user-select:none;}
+  .sync-pill:hover{border-color:#aaa;color:var(--text);}
+  .sync-dot{width:6px;height:6px;border-radius:50%;background:var(--muted2);flex-shrink:0;transition:background .3s;}
+  .sync-dot.ok{background:var(--green);}
+  .sync-dot.err{background:var(--red);animation:blink 1.5s infinite;}
+  .sync-dot.spin{background:var(--amber);animation:blink .7s infinite;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+  .setup-icon{background:none;border:none;cursor:pointer;color:var(--muted);font-size:15px;padding:4px;}
+  .setup-icon:hover{color:var(--text);}
+
+  /* ── Tab bar ── */
+  .tabbar{display:flex;background:var(--bg);border-bottom:2px solid var(--border);position:sticky;top:50px;z-index:49;}
+  .tab-btn{flex:1;padding:12px 8px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;letter-spacing:.3px;}
+  .tab-btn.active{color:var(--gold);border-bottom-color:var(--gold);font-weight:600;}
+  .tab-btn:hover:not(.active){color:var(--text);}
+
+  /* ── Tab panels ── */
+  .tab-panel{display:none;}
+  .tab-panel.active{display:block;}
+
+  /* ══════════════════════════════════
+     SALES TAB
+  ══════════════════════════════════ */
+  .sales-zone{display:flex;}
+  .panel{flex:1;display:flex;flex-direction:column;padding:18px 26px 14px;gap:11px;}
+  .panel-daily{border-right:1px solid var(--border);}
+  .sec-label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;}
+  .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .sales-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;}
+  .big-num{display:flex;align-items:flex-end;gap:3px;line-height:1;}
+  .big-num .cur{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;padding-bottom:8px;color:var(--gold);}
+  .big-num .cur.blue{color:var(--blue);}
+  .big-num .amt{font-family:'Playfair Display',serif;font-size:68px;font-weight:900;letter-spacing:-2px;color:var(--text);}
+  .update-btn{margin-bottom:8px;padding:7px 14px;background:var(--surface2);border:1.5px solid var(--border2);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;}
+  .update-btn:hover{border-color:var(--gold);color:var(--gold);background:var(--gold-bg);}
+  .bonus-chip{background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:12px;padding:10px 14px;display:flex;flex-direction:column;gap:4px;flex-shrink:0;min-width:155px;}
+  .bonus-chip-lbl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:2px;}
+  .bonus-chip-top{display:flex;align-items:center;gap:10px;}
+  .bonus-chip-amt{font-family:'Playfair Display',serif;font-size:26px;font-weight:900;color:var(--gold);line-height:1;}
+  .bonus-chip-amt .rm{font-size:12px;margin-right:1px;}
+  .bonus-total-row{display:flex;align-items:center;gap:6px;padding-top:4px;border-top:1px solid var(--gold-border);}
+  .bonus-total-lbl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--gold);opacity:.7;}
+  .bonus-total-amt{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;color:var(--gold);}
+  .overall-chip{text-align:right;flex-shrink:0;}
+  .overall-amt{font-family:'Playfair Display',serif;font-size:26px;font-weight:900;color:var(--purple);line-height:1;}
+  .overall-amt .rm{font-size:12px;margin-right:1px;}
+  .overall-pct-row{font-family:'DM Mono',monospace;font-size:10px;color:var(--purple);opacity:.7;margin-top:3px;}
+  .tiers{display:flex;flex-direction:column;justify-content:center;gap:11px;padding:6px 0;}
+  .tier-row{display:flex;align-items:center;gap:10px;}
+  .tier-pill{font-family:'DM Mono',monospace;font-size:11px;font-weight:500;width:36px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;border:1px solid;}
+  .pill-d{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold);}
+  .pill-t{background:var(--blue-bg);border-color:var(--blue-border);color:var(--blue);}
+  .bar-wrap{flex:1;height:10px;background:var(--surface2);border-radius:999px;overflow:hidden;min-width:40px;}
+  .bar-fill{height:100%;border-radius:999px;transition:width 1.2s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;}
+  .bar-fill::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 60%,rgba(255,255,255,.5));animation:shim 2.5s infinite;}
+  @keyframes shim{0%,100%{opacity:0}50%{opacity:1}}
+  .ft1{background:linear-gradient(90deg,#e6b800,#c8960c);}
+  .ft2{background:linear-gradient(90deg,#c8960c,#d97706);}
+  .ft3{background:linear-gradient(90deg,#d97706,#b45309);}
+  .ftt1{background:linear-gradient(90deg,#3b82f6,#1a6bc8);}
+  .ftt2{background:linear-gradient(90deg,#1a6bc8,#4f46e5);}
+  .ftt3{background:linear-gradient(90deg,#4f46e5,#7c3aed);}
+  .tier-right{display:flex;align-items:center;gap:6px;width:260px;flex-shrink:0;justify-content:flex-end;flex-wrap:nowrap;}
+  .tier-tgt{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);min-width:80px;text-align:right;}
+  .tier-bonus{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;padding:2px 6px;border-radius:4px;white-space:nowrap;background:var(--green-bg);border:1px solid var(--green-border);color:var(--green);min-width:70px;text-align:center;}
+  .tier-bonus-pct{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;padding:2px 6px;border-radius:4px;white-space:nowrap;background:var(--purple-bg);border:1px solid var(--purple-border);color:var(--purple);min-width:70px;text-align:center;}
+  .tier-pct{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;width:42px;text-align:right;color:var(--text);}
+  .badge{font-family:'DM Mono',monospace;font-size:10px;padding:3px 7px;border-radius:5px;min-width:62px;text-align:center;border:1px solid;white-space:nowrap;}
+  .bh{background:var(--green-bg);border-color:var(--green-border);color:var(--green);}
+  .bc{background:var(--amber-bg);border-color:var(--amber-border);color:var(--amber);}
+  .bm{background:var(--surface2);border-color:var(--border2);color:var(--muted);}
+  @keyframes glowGold{0%,100%{box-shadow:none}50%{box-shadow:inset 0 0 0 2px var(--gold-border),0 0 30px 3px rgba(200,150,12,.08)}}
+  .glow-gold{animation:glowGold 2.5s infinite;}
+
+  /* Clock zone */
+  .clock-zone{border-top:2px solid var(--border);background:var(--surface);display:flex;flex-wrap:wrap;}
+  .cam-wrap{width:calc(26vh*1.25);flex-shrink:0;min-height:160px;position:relative;background:var(--surface2);border-right:1px solid var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  #video{width:100%;height:100%;object-fit:cover;display:none;transform:scaleX(-1);}
+  #canvas{display:none;position:absolute;top:0;left:0;width:100%;height:100%;}
+  .cam-idle{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;pointer-events:none;}
+  .cam-idle-icon{font-size:24px;opacity:.18;}
+  .cam-idle-text{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted2);}
+  .cam-rec{position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--red);display:none;animation:blink .8s infinite;}
+  .emp-section{flex:1;min-width:180px;display:flex;flex-direction:column;justify-content:center;padding:12px 16px;gap:9px;border-right:1px solid var(--border);}
+  .zone-label{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;}
+  .emp-grid{display:flex;flex-wrap:wrap;gap:7px;}
+  .emp-btn{background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:7px 16px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:all .12s;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
+  .emp-btn.sel{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold);font-weight:600;}
+  .emp-btn:hover:not(.sel){background:var(--surface2);}
+  .punch-section{width:155px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:12px;gap:8px;border-right:1px solid var(--border);}
+  .btn-in,.btn-out{width:100%;height:40px;border-radius:9px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .12s;}
+  .btn-in{background:var(--green);border:none;color:#fff;}
+  .btn-out{background:var(--bg);border:1.5px solid var(--border2);color:var(--muted);}
+  .btn-in:active{transform:scale(.97);}
+  .btn-out:hover{border-color:var(--red);color:var(--red);}
+  .feed-section{flex:1;min-width:120px;display:flex;flex-direction:column;padding:10px 12px;gap:6px;overflow:hidden;}
+  .feed-scroll{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;max-height:140px;}
+  .feed-item{display:flex;align-items:center;gap:7px;font-size:12px;padding:5px 9px;background:var(--bg);border:1px solid var(--border);border-radius:7px;flex-shrink:0;}
+  .fdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+  .fdot-in{background:var(--green);} .fdot-out{background:var(--red);}
+  .fdot-foc{background:var(--blue);} .fdot-sample{background:var(--gold);} .fdot-faulty{background:#f97316;} .fdot-neutral{background:var(--muted);}
+  .fname{font-weight:400;} .ftype{font-size:13px;color:var(--text);flex-shrink:0;font-weight:600;}
+  .fdetail{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px;}
+  .ftime{margin-left:auto;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0;}
+  .settings-col{width:42px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border-left:1px solid var(--border);}
+  .settings-btn{writing-mode:vertical-rl;font-family:'DM Mono',monospace;font-size:9px;letter-spacing:3px;color:var(--muted);cursor:pointer;background:none;border:none;padding:8px;transition:color .15s;}
+  .settings-btn:hover{color:var(--text);}
+
+  /* ══════════════════════════════════
+     STOCK COUNT TAB
+  ══════════════════════════════════ */
+  .stock-page{padding:20px;}
+  .stock-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
+  .stock-title{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;}
+  .stock-subtitle{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:3px;}
+  .stock-emp-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .stock-emp-label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--muted);}
+  .stock-emp-select{padding:8px 12px;border:1.5px solid var(--border2);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;color:var(--text);background:var(--bg);cursor:pointer;outline:none;}
+  .stock-emp-select:focus{border-color:var(--gold);}
+
+  /* Stock table */
+  .stock-table{width:100%;border-collapse:separate;border-spacing:0;border-radius:12px;border:1px solid var(--border);}
+  .stock-table th{position:sticky;top:0;z-index:2;background:var(--surface2);padding:10px 14px;text-align:left;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);}
+  .stock-table th:nth-child(1){position:sticky;left:0;top:0;z-index:4;background:var(--surface2);border-right:2px solid var(--border2);box-shadow:2px 0 6px rgba(0,0,0,.06);}
+  .stock-table td:nth-child(1){position:sticky;left:0;z-index:2;background:var(--bg);border-right:2px solid var(--border2);box-shadow:2px 0 6px rgba(0,0,0,.06);}
+  .stock-table tr:hover td:nth-child(1){background:var(--surface);}
+  .stock-table td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:14px;vertical-align:middle;}
+  .stock-table tr:last-child td{border-bottom:none;}
+  .stock-table tr:hover td{background:var(--surface);}
+  .sku-code{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);}
+  .sku-name{font-weight:500;}
+  .par-badge{font-family:'DM Mono',monospace;font-size:11px;color:var(--blue);background:var(--blue-bg);border:1px solid var(--blue-border);padding:2px 7px;border-radius:4px;}
+  .qty-input{width:80px;padding:7px 10px;border:1.5px solid var(--border2);border-radius:7px;font-family:'DM Mono',monospace;font-size:15px;font-weight:500;text-align:center;color:var(--text);background:var(--bg);outline:none;transition:border-color .15s;}
+  .qty-input:focus{border-color:var(--gold);}
+  .qty-input.ok{border-color:var(--green);background:var(--green-bg);}
+  .qty-input.warn{border-color:var(--amber);background:var(--amber-bg);}
+  .qty-input.low{border-color:var(--red);background:var(--red-bg);}
+
+  .stock-footer{margin-top:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+  .stock-progress{font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);}
+  .stock-progress span{color:var(--text);font-weight:500;}
+  .submit-stock-btn{padding:12px 28px;background:var(--green);border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s;}
+  .submit-stock-btn:hover{opacity:.88;}
+  .submit-stock-btn:disabled{background:var(--muted2);cursor:not-allowed;}
+  .stock-submitted-banner{background:var(--green-bg);border:1px solid var(--green-border);border-radius:10px;padding:14px 18px;font-family:'DM Mono',monospace;font-size:13px;color:var(--green);display:none;}
+
+  /* ══════════════════════════════════
+     REORDER TAB
+  ══════════════════════════════════ */
+  .reorder-page{padding:20px;}
+  .reorder-header{margin-bottom:20px;}
+  .reorder-title{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;}
+  .reorder-subtitle{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:3px;}
+  .reorder-grid{display:flex;flex-direction:column;gap:10px;}
+  .reorder-card{display:flex;align-items:center;gap:14px;padding:14px 18px;border-radius:12px;border:1px solid;}
+  .reorder-card.urgent{background:var(--red-bg);border-color:var(--red-border);}
+  .reorder-card.low{background:var(--amber-bg);border-color:var(--amber-border);}
+  .reorder-card.ok{background:var(--green-bg);border-color:var(--green-border);}
+  .reorder-card.pending{background:var(--surface2);border-color:var(--border);}
+  .rc-icon{font-size:20px;flex-shrink:0;}
+  .rc-info{flex:1;min-width:0;}
+  .rc-name{font-weight:600;font-size:14px;}
+  .rc-sku{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-top:1px;}
+  .rc-right{text-align:right;flex-shrink:0;}
+  .rc-qty{font-family:'Playfair Display',serif;font-size:22px;font-weight:900;line-height:1;}
+  .rc-qty.urgent{color:var(--red);}
+  .rc-qty.low{color:var(--amber);}
+  .rc-qty.ok{color:var(--green);}
+  .rc-label{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--muted);margin-top:2px;}
+  .rc-actual{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:2px;}
+  .reorder-empty{text-align:center;padding:40px;font-family:'DM Mono',monospace;font-size:13px;color:var(--muted);}
+  .reorder-no-count{text-align:center;padding:40px;}
+  .reorder-no-count p{font-family:'DM Mono',monospace;font-size:13px;color:var(--muted);margin-bottom:12px;}
+
+  /* Summary bar */
+  .reorder-summary{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;}
+  .sum-chip{flex:1;min-width:80px;padding:12px 14px;border-radius:10px;text-align:center;border:1px solid;}
+  .sum-chip.urgent{background:var(--red-bg);border-color:var(--red-border);}
+  .sum-chip.low{background:var(--amber-bg);border-color:var(--amber-border);}
+  .sum-chip.ok{background:var(--green-bg);border-color:var(--green-border);}
+  .sum-chip .num{font-family:'Playfair Display',serif;font-size:28px;font-weight:900;}
+  .sum-chip.urgent .num{color:var(--red);}
+  .sum-chip.low .num{color:var(--amber);}
+  .sum-chip.ok .num{color:var(--green);}
+  .sum-chip .lbl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:2px;margin-top:2px;}
+  .sum-chip.urgent .lbl{color:var(--red);}
+  .sum-chip.low .lbl{color:var(--amber);}
+  .sum-chip.ok .lbl{color:var(--green);}
+
+  /* Shared modals & toasts */
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);padding:9px 22px;border-radius:8px;font-family:'DM Mono',monospace;font-size:13px;opacity:0;transition:all .22s;z-index:200;pointer-events:none;white-space:nowrap;color:#fff;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.ok{background:var(--green);} .toast.err{background:var(--red);} .toast.info{background:var(--text);}
+  .flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:99;transition:opacity .06s;}
+  .flash.on{opacity:.5;}
+
+  .update-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:300;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+  .update-modal-bg.open{display:flex;}
+  .update-modal{background:var(--bg);border:1px solid var(--border2);border-radius:16px;padding:28px;width:min(340px,90vw);display:flex;flex-direction:column;gap:18px;box-shadow:0 20px 60px rgba(0,0,0,.12);}
+  .um-title{font-family:'Playfair Display',serif;font-size:18px;font-weight:700;}
+  .um-sub{font-size:13px;color:var(--muted);margin-top:4px;}
+  .um-input-wrap{display:flex;align-items:center;border:1.5px solid var(--border2);border-radius:9px;overflow:hidden;transition:border-color .15s;}
+  .um-input-wrap:focus-within{border-color:var(--gold);}
+  .um-prefix{padding:0 12px;font-family:'DM Mono',monospace;font-size:15px;font-weight:500;color:var(--gold);background:var(--gold-bg);border-right:1px solid var(--gold-border);height:52px;display:flex;align-items:center;flex-shrink:0;}
+  .um-input{flex:1;height:52px;border:none;outline:none;padding:0 14px;font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:var(--text);background:var(--bg);}
+  .um-actions{display:flex;gap:8px;}
+  .um-confirm{flex:1;background:var(--green);border:none;border-radius:9px;height:46px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:#fff;cursor:pointer;}
+  .um-confirm:hover{opacity:.85;}
+  .um-cancel{background:var(--bg);border:1.5px solid var(--border2);border-radius:9px;height:46px;padding:0 18px;font-family:'DM Sans',sans-serif;font-size:15px;color:var(--muted);cursor:pointer;}
+
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+  .modal-bg.open{display:flex;}
+  .modal{background:var(--bg);border:1px solid var(--border2);border-radius:16px;padding:28px;width:min(480px,92vw);max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px;box-shadow:0 20px 60px rgba(0,0,0,.15);}
+  .modal-title{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;}
+  .fg{display:flex;flex-direction:column;gap:6px;}
+  .fl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;}
+  input[type=text]{background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:9px 11px;color:var(--text);font-family:'DM Mono',monospace;font-size:11px;width:100%;outline:none;}
+  input:focus{border-color:var(--gold);}
+  .status-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;font-size:12px;line-height:2;font-family:'DM Mono',monospace;}
+  .status-box .ok{color:var(--green);} .status-box .er{color:var(--red);} .status-box .warn{color:var(--amber);}
+  .ma{display:flex;gap:8px;flex-wrap:wrap;}
+  .btn-save{flex:1;background:var(--text);border:none;border-radius:8px;padding:12px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;color:#fff;}
+  .btn-save:hover{opacity:.8;}
+  .btn-test{background:var(--bg);border:1.5px solid var(--border2);border-radius:8px;padding:12px 14px;font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;color:var(--muted);}
+  .btn-test:hover{border-color:var(--blue);color:var(--blue);}
+  .btn-cancel{background:var(--bg);border:1.5px solid var(--border2);border-radius:8px;padding:12px 14px;font-family:'DM Sans',sans-serif;font-size:14px;cursor:pointer;color:var(--muted);}
+  ::-webkit-scrollbar{width:3px;} ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+  /* Quick Action buttons */
+  /* Actions col */
+  .actions-col{flex-shrink:0;min-width:140px;display:flex;flex-direction:column;padding:12px 14px;gap:7px;border-right:1px solid var(--border);}
+  .action-hint{font-size:11px;color:var(--muted);font-style:italic;font-family:'DM Sans',sans-serif;}
+  .action-btns{display:flex;flex-direction:column;gap:6px;}
+  .act-btn-row{display:flex;gap:6px;}
+  .act-btn{height:34px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:background .1s,border-color .1s,color .1s,transform .1s;display:flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;width:100%;-webkit-tap-highlight-color:transparent;}
+  .act-clock-main{height:42px;font-size:13px;}
+  .act-btn-row .act-btn{flex:1;}
+  .act-btn:disabled{opacity:.35;cursor:not-allowed;}
+  .act-btn.clock{border-color:var(--green-border);color:var(--green);background:var(--green-bg);}
+  .act-btn.foc{border-color:#9b6fd4;color:#9b6fd4;background:#f5f0ff;}
+  .act-btn.sample{border-color:var(--gold-border);color:var(--gold);background:var(--gold-bg);}
+  .act-btn.faulty{border-color:var(--red-border);color:var(--red);background:var(--red-bg);}
+  .act-btn.sel.clock{background:var(--green)!important;color:#fff!important;border-color:var(--green)!important;transform:scale(.97);}
+  .act-btn.sel.foc{background:var(--blue)!important;color:#fff!important;border-color:var(--blue)!important;transform:scale(.97);}
+  .act-btn.sel.sample{background:var(--gold)!important;color:#fff!important;border-color:var(--gold)!important;transform:scale(.97);}
+  .act-btn.sel.faulty{background:var(--red)!important;color:#fff!important;border-color:var(--red)!important;transform:scale(.97);}
+  .act-btn.transfer{border-color:#6c8ebf;color:#6c8ebf;background:#f0f4ff;}
+  .act-btn.sel.transfer{background:#6c8ebf!important;color:#fff!important;border-color:#6c8ebf!important;}
+  /* Task Earn Chip */
+  .task-earn-chip{background:linear-gradient(135deg,var(--gold-bg) 0%,#fff8e1 100%);border:1.5px solid var(--gold-border);border-radius:12px;padding:10px 12px;}
+  .task-earn-row{display:flex;align-items:center;justify-content:space-around;gap:8px;}
+  .task-earn-lbl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:3px;}
+  .task-earn-amt{font-family:'Playfair Display',serif;font-size:22px;font-weight:900;color:var(--gold);line-height:1;}
+  .task-earn-rm{font-size:11px;margin-right:1px;}
+  .task-earn-divider{width:1px;height:32px;background:var(--gold-border);}
+
+  /* Daily tasks col */
+  .tasks-col{flex-shrink:0;min-width:160px;max-width:230px;display:flex;flex-direction:column;padding:12px 14px;gap:7px;border-right:1px solid var(--border);background:var(--gold-bg);}
+  .tasks-col .zone-label{color:var(--gold);}
+  .daily-task-list{display:grid;grid-template-columns:1fr;gap:5px;margin-top:2px;}
+  .daily-task-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;border:1.5px solid;background:rgba(255,255,255,.6);cursor:pointer;transition:all .15s;user-select:none;}
+  .daily-task-item:hover{background:rgba(255,255,255,.9);}
+  .daily-task-item.done{opacity:.55;}
+  .daily-task-item.done .task-text{text-decoration:line-through;}
+  .task-check{width:17px;height:17px;border-radius:4px;border:2px solid;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;transition:all .15s;background:transparent;}
+  .task-text{font-family:'DM Sans',sans-serif;font-size:12px;line-height:1.3;font-weight:500;}
+  /* Rainbow — same muted design-system tone */
+  .tc-0{border-color:#9b7fe8;} .tc-0 .task-check{border-color:#9b7fe8;color:#9b7fe8;} .tc-0.done .task-check{background:#9b7fe8;color:#fff;} .tc-0 .task-text{color:#7c5cbf;}
+  .tc-1{border-color:var(--blue-border);} .tc-1 .task-check{border-color:var(--blue);color:var(--blue);} .tc-1.done .task-check{background:var(--blue);color:#fff;} .tc-1 .task-text{color:var(--blue);}
+  .tc-2{border-color:var(--green-border);} .tc-2 .task-check{border-color:var(--green);color:var(--green);} .tc-2.done .task-check{background:var(--green);color:#fff;} .tc-2 .task-text{color:var(--green);}
+  .tc-3{border-color:var(--gold-border);} .tc-3 .task-check{border-color:var(--gold);color:var(--gold);} .tc-3.done .task-check{background:var(--gold);color:#fff;} .tc-3 .task-text{color:var(--gold);}
+  .tc-4{border-color:#f0b38a;} .tc-4 .task-check{border-color:#e07a30;color:#e07a30;} .tc-4.done .task-check{background:#e07a30;color:#fff;} .tc-4 .task-text{color:#c45c10;}
+  .tc-5{border-color:var(--red-border);} .tc-5 .task-check{border-color:var(--red);color:var(--red);} .tc-5.done .task-check{background:var(--red);color:#fff;} .tc-5 .task-text{color:var(--red);}
+  .qa-label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:8px;}
+  .qa-row{display:flex;gap:8px;}
+
+  /* Action modal */
+  .action-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
+  .action-modal-bg.open{display:flex;}
+  .action-modal{background:var(--bg);border:1px solid var(--border2);border-radius:18px;padding:24px;width:min(360px,92vw);display:flex;flex-direction:column;gap:14px;box-shadow:0 24px 80px rgba(0,0,0,.2);position:relative;}
+  .action-modal-close{position:absolute;top:14px;right:14px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);padding:4px 6px;border-radius:6px;}
+  .action-modal-close:hover{background:var(--surface2);color:var(--text);}
+  .action-modal-title{font-family:'Playfair Display',serif;font-size:20px;font-weight:700;}
+  .action-modal-type{display:inline-block;padding:3px 10px;border-radius:20px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;letter-spacing:1px;}
+  .action-modal-type.foc{background:#f5f0ff;color:#9b6fd4;}
+  .action-modal-type.sample{background:var(--gold-bg);color:var(--gold);}
+  .action-modal-type.faulty{background:var(--red-bg);color:var(--red);}
+  .action-modal-type.transfer{background:#f0f4ff;color:#6c8ebf;}
+  .action-field{display:flex;flex-direction:column;gap:5px;}
+  .action-field label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--muted);}
+  .action-field select,.action-field input[type=number],.action-field input[type=text],.action-field textarea{
+    width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:9px;
+    font-family:'DM Sans',sans-serif;font-size:14px;outline:none;background:var(--bg);color:var(--text);}
+  .action-field select:focus,.action-field input:focus,.action-field textarea:focus{border-color:var(--gold);}
+  .action-field textarea{resize:none;height:68px;font-size:13px;}
+  .action-cam-wrap{width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:var(--surface2);position:relative;display:flex;align-items:center;justify-content:center;}
+  .action-cam-wrap video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+  .action-cam-placeholder{font-size:24px;opacity:.2;}
+  .action-cam-rec{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--red);display:none;animation:blink .8s infinite;}
+  .action-submit-btn{width:100%;height:48px;background:var(--gold);border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:700;color:#fff;cursor:pointer;transition:all .12s;}
+  .action-submit-btn:disabled{opacity:.4;cursor:not-allowed;}
+  .action-submit-btn:not(:disabled):active{transform:scale(.97);}
+
+  /* Punch modal */
+  .punch-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
+  .punch-modal-bg.open{display:flex;}
+  .punch-modal{background:var(--bg);border:1px solid var(--border2);border-radius:18px;padding:24px;width:min(340px,90vw);display:flex;flex-direction:column;gap:14px;box-shadow:0 24px 80px rgba(0,0,0,.18);position:relative;}
+  .punch-close{position:absolute;top:14px;right:14px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);line-height:1;padding:4px 6px;border-radius:6px;}
+  .punch-close:hover{background:var(--surface2);color:var(--text);}
+  .punch-emp-name{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;text-align:center;padding-top:4px;}
+  .punch-cam-wrap{width:100%;aspect-ratio:4/3;border-radius:12px;overflow:hidden;background:var(--surface2);position:relative;display:flex;align-items:center;justify-content:center;}
+  .punch-cam-wrap video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+  .punch-cam-idle{display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;}
+  .punch-cam-idle-icon{font-size:28px;opacity:.2;}
+  .punch-cam-rec{position:absolute;top:8px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--red);display:none;animation:blink .8s infinite;}
+  .punch-action-row{display:flex;gap:8px;}
+  .punch-btn-in{flex:1;height:48px;background:var(--green);border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:#fff;cursor:pointer;transition:all .12s;}
+  .punch-btn-in:active{transform:scale(.97);}
+  .punch-btn-out{flex:1;height:48px;background:var(--red);border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:#fff;cursor:pointer;transition:all .12s;}
+  .punch-btn-out:active{transform:scale(.97);}
+  .punch-btn-disabled{opacity:0.2;pointer-events:none;cursor:not-allowed;}
+  .punch-btn-dim{opacity:0.35!important;}
+  .capture-btn{width:100%;height:44px;background:var(--blue);border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;color:#fff;cursor:pointer;display:none;}
+  .capture-btn:active{transform:scale(.97);}
+  .punch-status{text-align:center;font-family:'DM Mono',monospace;font-size:13px;font-weight:600;padding:8px;border-radius:8px;display:none;}
+  .punch-status.ok{background:var(--green-bg);color:var(--green);}
+
+  /* ── Daily Task Modal ── */
+  .task-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;align-items:center;justify-content:center;padding:16px;}
+  .task-modal-bg.open{display:flex;}
+  .task-modal{background:var(--surface);border-radius:16px;width:100%;max-width:420px;padding:20px;display:flex;flex-direction:column;gap:14px;position:relative;max-height:90vh;overflow-y:auto;}
+  .task-modal-close{position:absolute;top:14px;right:14px;background:none;border:none;font-size:18px;cursor:pointer;color:var(--muted);padding:4px 6px;border-radius:6px;}
+  .task-modal-close:hover{background:var(--surface2);}
+  .task-modal-header{display:flex;align-items:center;gap:12px;}
+  .task-modal-icon{font-size:28px;}
+  .task-modal-title{font-family:'Playfair Display',serif;font-size:18px;font-weight:700;}
+  .task-modal-reward{font-family:'DM Mono',monospace;font-size:11px;color:var(--gold);letter-spacing:1px;margin-top:2px;}
+  .task-field{display:flex;flex-direction:column;gap:5px;}
+  .task-field-label{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:2px;color:var(--muted);}
+  .task-select{padding:8px 10px;border:1.5px solid var(--border2);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:14px;background:var(--bg);color:var(--text);outline:none;}
+  .task-select:focus{border-color:var(--gold);}
+  .task-photo-grid{display:grid;gap:8px;}
+  .task-photo-grid.grid-2{grid-template-columns:1fr 1fr;}
+  .task-photo-grid.grid-3{grid-template-columns:1fr 1fr 1fr;}
+  .task-photo-grid.grid-4{grid-template-columns:1fr 1fr;}
+  .task-photo-grid.grid-6{grid-template-columns:1fr 1fr 1fr;}
+  .task-photo-slot{aspect-ratio:1;border-radius:10px;border:2px dashed var(--border2);background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:all .15s;overflow:hidden;position:relative;}
+  .task-photo-slot:hover{border-color:var(--gold);background:var(--gold-bg);}
+  .task-photo-slot.done{border-style:solid;border-color:var(--green-border);}
+  .task-photo-slot.done .slot-placeholder{display:none;}
+  .task-photo-slot img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:8px;}
+  .slot-placeholder{display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none;}
+  .slot-icon{font-size:20px;opacity:.4;}
+  .slot-label{font-family:'DM Sans',sans-serif;font-size:10px;color:var(--muted);text-align:center;padding:0 4px;line-height:1.3;}
+  .task-photo-hint{font-size:11px;color:var(--muted);text-align:center;font-family:'DM Mono',monospace;letter-spacing:1px;}
+  .task-submit-btn{width:100%;height:46px;background:var(--gold);border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:700;color:#fff;cursor:pointer;transition:all .12s;}
+  .task-submit-btn:disabled{opacity:.35;cursor:not-allowed;}
+  .task-submit-btn:not(:disabled):active{transform:scale(.98);}
+  .task-status{text-align:center;font-family:'DM Mono',monospace;font-size:12px;color:var(--green);display:none;}
+  .task-uploading{text-align:center;font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;}
+
+  /* Mobile */
+  @media (max-width:700px){
+    .sales-zone{flex-direction:column;}
+    .panel-daily{border-right:none;border-bottom:1px solid var(--border);}
+    .big-num .amt{font-size:48px;}
+    .cam-wrap{width:100%!important;border-right:none;border-bottom:1px solid var(--border);}
+    .tier-right{width:auto;}
+    /* Clock zone stacks on mobile */
+    .clock-zone{flex-direction:column;}
+    .emp-section,.actions-col,.feed-section,.tasks-col{border-right:none;border-bottom:1px solid var(--border);min-width:0;width:100%;}
+    .actions-col{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:6px;}
+    .actions-col .zone-label{width:100%;}
+    .act-btn-row{flex-wrap:wrap;}
+    .act-btn-row .act-btn{min-width:80px;}
+    .tasks-col{max-width:none;}
+    .daily-task-list{grid-template-columns:1fr 1fr;gap:5px;}
+    .settings-col{display:none;}
+    /* ★ P2. Narrow screens: the topbar keeps the store, the sync pill and the
+       way out. The wall clock and the date are the first things to go — the
+       tablet's own status bar already shows both. */
+    .topbar{height:auto;min-height:46px;padding:6px 12px;gap:8px;}
+    .brand{font-size:14px;letter-spacing:0;flex:1 1 auto;}
+    #topStore{font-size:13px;}
+    .tb-clock,.tb-date{display:none;}
+    .tb-right{gap:6px;flex:0 0 auto;}
+    /* ★ The build tag STAYS on narrow screens. Reading it off a photo of a
+       shop's screen is the entire reason it exists. */
+  }
+</style>
+<style>
+@keyframes popIn{from{transform:scale(0.7);opacity:0}to{transform:scale(1);opacity:1}}
+</style>
+
+<h1>Tong Ah Kiosk</h1>
+
+<div id="loginView">
+  <p class="note">
+    Not published. Private repo, GitHub Pages off.
+  </p>
+
+  <label for="email">Email</label>
+  <input id="email" type="email" autocomplete="off" autocapitalize="off"
+         spellcheck="false">
+
+  <label for="password">Password</label>
+  <input id="password" type="password" autocomplete="off">
+
+  <button id="loginBtn">Login</button>
+</div>
+
+<div id="sessionView" class="hidden">
+
+<!-- Topbar
+     ★ The store name lives HERE now. It used to be printed by the login screen
+       at the very bottom of the page, below the whole dashboard, which is where
+       nobody looked — that was an oversight, not a layout.
+     ★ The season name is the SERVER's (getDashboard.event_name). The hard-coded
+       "Raya 2026" is gone: this file outlives one season.
+     ★ Log out sits with the LIVE pill because that is where the tablet's state
+       is read off. -->
+<div class="topbar">
+  <div class="brand">Tong Ah Kiosk<span id="topStore"></span><span id="topEvent" class="hidden"></span></div>
+  <div class="tb-clock" id="liveClock">--:--:--</div>
+  <div class="tb-right">
+    <div class="tb-date" id="liveDate">--</div>
+    <div class="sync-pill" onclick="manualRefresh()" title="Tap to refresh">
+      <div class="sync-dot" id="syncDot"></div>
+      <span id="syncText">SETUP</span>
+    </div>
+    <!-- ★ P5. The build this tablet is running. A kiosk is never rebooted, so a
+         shop can sit on last week's file for days and report "the new one is
+         broken" — and a photo of the screen cannot tell the two apart. Written
+         into the file at commit time; it costs no request. -->
+    <span class="build-tag" id="buildTag" title="build eb93a01 — the commit this file's code comes from">eb93a01</span>
+    <button id="logoutBtn" class="topbar-logout">Log out</button>
+  </div>
+</div>
+
+<!-- Tab bar -->
+<div class="tabbar">
+  <button class="tab-btn active" onclick="switchTab('sales',this)">📊 Sales</button>
+  <button class="tab-btn" onclick="switchTab('stock',this)">📦 Stock Count</button>
+  <button class="tab-btn" onclick="switchTab('reorder',this)">🔔 補貨需求</button>
+</div>
+
+<!-- ════════ TAB: SALES ════════ -->
+<div class="tab-panel active" id="tab-sales">
+  <div class="sales-zone">
+    <div class="panel panel-daily" id="dailyCard">
+      <div class="panel-head">
+        <div>
+          <div class="sec-label">Today's Sales</div>
+          <div class="sales-row">
+            <div class="big-num"><span class="cur">RM</span><span class="amt" id="dailyAmt" onclick="toggleSalesVis()" style="cursor:pointer;" title="Tap to reveal">–&thinsp;–</span></div>
+            <button class="update-btn" onclick="openUpdateModal()">✎ Update</button>
+          </div>
+        </div>
+        <div class="bonus-chip">
+          <div class="bonus-chip-lbl">Daily Bonus</div>
+          <div class="bonus-chip-top">
+            <div class="bonus-chip-amt"><span class="rm">RM</span><span id="commAmt">—</span></div>
+            <div class="badge bm" id="commStatus">—</div>
+          </div>
+          <div class="bonus-total-row">
+            <span class="bonus-total-lbl">TOTAL BONUS</span>
+            <span class="bonus-total-amt">RM <span id="totalBonusAmt">—</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="tiers">
+        <div class="tier-row"><div class="tier-pill pill-d">T1</div><div class="bar-wrap"><div class="bar-fill ft1" id="t1Bar" style="width:0"></div></div><div class="tier-right"><span class="tier-tgt" id="t1Tgt">—</span><span class="tier-bonus" id="t1Bonus">—</span><span class="tier-pct" id="t1Pct">—</span><span class="badge bm" id="t1Badge">—</span></div></div>
+        <div class="tier-row"><div class="tier-pill pill-d">T2</div><div class="bar-wrap"><div class="bar-fill ft2" id="t2Bar" style="width:0"></div></div><div class="tier-right"><span class="tier-tgt" id="t2Tgt">—</span><span class="tier-bonus" id="t2Bonus">—</span><span class="tier-pct" id="t2Pct">—</span><span class="badge bm" id="t2Badge">—</span></div></div>
+        <div class="tier-row"><div class="tier-pill pill-d">T3</div><div class="bar-wrap"><div class="bar-fill ft3" id="t3Bar" style="width:0"></div></div><div class="tier-right"><span class="tier-tgt" id="t3Tgt">—</span><span class="tier-bonus" id="t3Bonus">—</span><span class="tier-pct" id="t3Pct">—</span><span class="badge bm" id="t3Badge">—</span></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="sec-label">Total Sales</div>
+          <div class="big-num"><span class="cur blue">RM</span><span class="amt" id="totalAmt" onclick="toggleSalesVis()" style="cursor:pointer;" title="Tap to reveal">–&thinsp;–</span></div>
+        </div>
+        <div class="overall-chip">
+          <div class="sec-label">Overall Comm</div>
+          <div class="overall-amt"><span class="rm">RM</span><span id="overallComm">—</span></div>
+          <div class="overall-pct-row" id="overallPctRow">—</div>
+        </div>
+
+      </div>
+      <div class="tiers">
+        <div class="tier-row"><div class="tier-pill pill-t">TT1</div><div class="bar-wrap"><div class="bar-fill ftt1" id="tt1Bar" style="width:0"></div></div><div class="tier-right"><span class="tier-tgt" id="tt1Tgt">—</span><span class="tier-bonus-pct" id="tt1BonusPct">—</span><span class="tier-pct" id="tt1Pct">—</span><span class="badge bm" id="tt1Badge">—</span></div></div>
+        <div class="tier-row"><div class="tier-pill pill-t">TT2</div><div class="bar-wrap"><div class="bar-fill ftt2" id="tt2Bar" style="width:0"></div></div><div class="tier-right"><span class="tier-tgt" id="tt2Tgt">—</span><span class="tier-bonus-pct" id="tt2BonusPct">—</span><span class="tier-pct" id="tt2Pct">—</span><span class="badge bm" id="tt2Badge">—</span></div></div>
+        <div class="tier-row"><div class="tier-pill pill-t">TT3</div><div class="bar-wrap"><div class="bar-fill ftt3" id="tt3Bar" style="width:0"></div></div><div class="tier-right"><span class="tier-tgt" id="tt3Tgt">—</span><span class="tier-bonus-pct" id="tt3BonusPct">—</span><span class="tier-pct" id="tt3Pct">—</span><span class="badge bm" id="tt3Badge">—</span></div></div>
+      </div>
+    </div>
+  </div>
+  <!-- Staff + Actions + Tasks zone -->
+  <div class="clock-zone">
+
+    <!-- Staff selection -->
+    <div class="emp-section">
+      <div class="zone-label">STAFF</div>
+      <div class="emp-grid" id="empGrid"><div style="font-size:12px;color:var(--muted)">Loading…</div></div>
+    </div>
+
+    <!-- Actions column -->
+    <div class="actions-col">
+      <div class="zone-label">ACTIONS</div>
+      <div class="action-btns" id="actionBtns">
+        <button class="act-btn clock act-clock-main" id="actClock">🕐 Clock In / Out</button>
+        <div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--muted);margin-top:6px;margin-bottom:4px;">STOCK OUT ACTIONS</div>
+        <div class="act-btn-row">
+          <button class="act-btn foc"      id="actFOC">🎁 FOC</button>
+          <button class="act-btn sample"   id="actSample">🍰 Sample</button>
+          <button class="act-btn faulty"   id="actFaulty">⚠️ Faulty</button>
+          <button class="act-btn transfer" id="actTransfer">📦 Transfer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent feed (next to staff+actions) -->
+    <div class="feed-section">
+      <!-- ★ R8: says what it is. The backend has no source for FOC / Sample /
+           Faulty / Transfer entries, and a panel titled "Activity" that silently
+           shows only half of them reads as "the records are gone". -->
+      <div class="zone-label">Today's Clock In / Out</div>
+      <div class="feed-scroll" id="feedScroll"></div>
+    </div>
+
+    <!-- Daily Tasks (right end, colourful) -->
+    <div class="tasks-col">
+      <div class="zone-label">DAILY TASKS</div>
+      <div class="task-earn-chip">
+        <div class="task-earn-row">
+          <div>
+            <div class="task-earn-lbl">🎯 Today</div>
+            <div class="task-earn-amt"><span class="task-earn-rm">RM</span><span id="taskRewardAmt">0</span></div>
+          </div>
+          <div class="task-earn-divider"></div>
+          <div>
+            <div class="task-earn-lbl">🏆 Total</div>
+            <div class="task-earn-amt"><span class="task-earn-rm">RM</span><span id="taskTotalAmt">0</span></div>
+          </div>
+        </div>
+      </div>
+      <div id="dailyTaskList" class="daily-task-list"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════ TAB: Stock Count ════════ -->
+<div class="tab-panel" id="tab-stock">
+  <div class="stock-page">
+    <div class="stock-header">
+      <div>
+        <div class="stock-title">📦 Evening Stock Count</div>
+        <div class="stock-subtitle" id="stockSubtitle">Raya 2026 · Loading…</div>
+      </div>
+      <div class="stock-emp-row">
+        <span class="stock-emp-label">DONE BY</span>
+        <select class="stock-emp-select" id="stockEmpSelect">
+          <option value="">Select Employee</option>
+        </select>
+      </div>
+    </div>
+    <div class="stock-submitted-banner" id="stockSubmittedBanner" style="display:none">
+      ✅ Stock count submitted today. You can submit again to overwrite with corrected data.
+    </div>
+    <div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 200px);position:relative;">
+    <table class="stock-table" style="min-width:900px;">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Product</th>
+          <th style="text-align:center">Open B/D</th>
+          <th style="text-align:center;background:#f0faf4;color:var(--green)">+HQ</th>
+          <th style="text-align:center;background:#f0faf4;color:var(--green)">+Transfer</th>
+          <th style="text-align:center;background:#fff5f5;color:var(--red)">−Sales</th>
+          <th style="text-align:center;background:#fff5f5;color:var(--red)">−Action</th>
+          <th style="text-align:center;background:var(--blue-bg);color:var(--blue)">Expected</th>
+          <th style="text-align:center;background:var(--gold-bg);color:var(--gold)">Closing</th>
+          <th style="min-width:130px">Remarks</th>
+        </tr>
+      </thead>
+      <tbody id="stockTableBody">
+        <tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);font-family:'DM Mono',monospace;font-size:12px;">Loading products…</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="stock-footer">
+      <div class="stock-progress">Filled: <span id="stockFilled">0</span> / <span id="stockTotal">0</span></div>
+      <button class="submit-stock-btn" id="submitStockBtn" onclick="confirmStockSubmit()">Submit Stock Count</button>
+      <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5;">
+        ⚠️ Record all FOC / Sample / Faulty / Transfer actions before submitting.<br>
+        <span style="font-size:10px;">请确保所有 FOC / Sample / Faulty / Transfer 已记录后才提交。</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Stock Submit Confirm Modal -->
+<div id="stockConfirmBg" class="modal-bg" style="z-index:1100;background:rgba(0,0,0,0.55);">
+  <div class="modal-card" onclick="event.stopPropagation()" style="text-align:center;padding:28px 24px;background:#fff;border-radius:18px;max-width:340px;width:90%;margin:auto;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+    <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+    <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px;" id="stockConfirmTitle">Ready to submit?</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px;" id="stockConfirmBody">
+      Make sure all FOC / Sample / Faulty / Transfer actions are recorded before submitting.
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:20px;" id="stockConfirmSub">
+      请确保所有 FOC / Sample / Faulty / Transfer 已记录后才提交。
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="cancelStockConfirm()" style="flex:1;height:44px;background:#fff0f0;border:1.5px solid var(--red);border-radius:10px;font-size:14px;font-weight:600;color:var(--red);cursor:pointer;">✕ Cancel</button>
+      <button onclick="closeStockConfirm();submitStock();" style="flex:1;height:44px;background:var(--green);border:none;border-radius:10px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;">✓ Confirm Stock</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ TAB: 補貨需求 ════════ -->
+<div class="tab-panel" id="tab-reorder">
+  <div class="reorder-page">
+    <div class="reorder-header">
+      <div class="reorder-title">🔔 Reorder Requirements</div>
+      <div class="reorder-subtitle" id="reorderSubtitle">Based on last stock count</div>
+    </div>
+    <div class="reorder-summary" id="reorderSummary"></div>
+    <div class="reorder-grid" id="reorderGrid">
+      <div class="reorder-no-count">
+        <p>No stock count submitted yet today.</p>
+        <button class="submit-stock-btn" onclick="switchTab('stock',this)" style="background:var(--blue)">Go to Stock Count →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Action Modal -->
+<div class="action-modal-bg" id="actionModalBg">
+  <div class="action-modal">
+    <button class="action-modal-close" onclick="closeActionModal()">✕</button>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div class="action-modal-title" id="actionModalTitle">FOC</div>
+      <div class="action-modal-type" id="actionModalType">FOC</div>
+    </div>
+    <div id="actionStaffBadge" style="display:none;align-items:center;gap:6px;padding:5px 10px;background:var(--surface2);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:var(--text);border:1px solid var(--border2);">
+      <span style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;letter-spacing:1px;">STAFF</span>
+      <span id="actionStaffName">—</span>
+    </div>
+    <div class="action-field">
+      <label>EMPLOYEE</label>
+      <select id="actionEmp"><option value="">Select Employee</option></select>
+    </div>
+    <div class="action-field">
+      <label>PRODUCT</label>
+      <select id="actionSku"><option value="">Select Product</option></select>
+    </div>
+    <div class="action-field">
+      <label>QUANTITY</label>
+      <input type="number" id="actionQty" min="1" value="1" placeholder="1">
+    </div>
+    <div class="action-field" id="actionRemarksField">
+      <label id="actionRemarksLabel">REMARKS <span style="color:var(--red)">*</span></label>
+      <textarea id="actionRemarks" placeholder="Required"></textarea>
+    </div>
+    <!-- Camera for Faulty (ceremonial) -->
+    <div class="action-cam-wrap" id="actionCamWrap" style="display:none">
+      <video id="actionVideo" autoplay playsinline muted></video>
+      <div class="action-cam-placeholder" id="actionCamPlaceholder">📷</div>
+      <div class="action-cam-rec" id="actionCamRec"></div>
+    </div>
+    <button class="action-submit-btn" id="actionSubmitBtn" onclick="submitAction()">Submit</button>
+  </div>
+</div>
+
+<!-- Punch Modal -->
+<div class="punch-modal-bg" id="punchModalBg">
+  <div class="punch-modal">
+    <button class="punch-close" onclick="closePunchModal()">✕</button>
+    <div class="punch-emp-name" id="punchEmpName">—</div>
+    <div class="punch-cam-wrap">
+      <video id="punchVideo" autoplay playsinline muted></video>
+      <div class="punch-cam-idle" id="punchCamIdle"><div class="punch-cam-idle-icon">📷</div></div>
+      <div class="punch-cam-rec" id="punchCamRec"></div>
+    </div>
+    <canvas id="punchCanvas" style="display:none"></canvas>
+    <div class="punch-action-row" id="punchActionRow">
+      <button class="punch-btn-in" id="punchBtnIn" onclick="punchSelect('IN')">▶ Clock In</button>
+      <button class="punch-btn-out" id="punchBtnOut" onclick="punchSelect('OUT')">■ Clock Out</button>
+    </div>
+    <div id="punchWarn" style="display:none;font-size:12px;padding:8px 10px;background:#fff3cd;border-radius:8px;margin-top:6px;color:#856404;"></div>
+    <button class="capture-btn" id="captureBtn" onclick="doCapture()">📷 Capture &amp; Confirm</button>
+    <div class="punch-status" id="punchStatus"></div>
+  </div>
+</div>
+
+<div class="flash" id="flash"></div>
+<div class="toast" id="toast"></div>
+
+<!-- Update Sales Modal -->
+<div class="update-modal-bg" id="updateModalBg">
+  <div class="update-modal">
+    <div><div class="um-title">Update Today's Sales</div><div class="um-sub">Saves directly to Google Sheets</div></div>
+    <!-- ★ R10: type=text on purpose. With type=number a browser hands back an
+         empty string for 'RM 1,200' and the page cannot say what was wrong —
+         the raw text is needed to tell the promoter which character to delete. -->
+    <div class="um-input-wrap"><div class="um-prefix">RM</div><input class="um-input" id="umInput" type="text" placeholder="0" inputmode="decimal" autocomplete="off"></div>
+    <div class="um-actions"><button class="um-confirm" onclick="confirmUpdate()">Confirm</button><button class="um-cancel" onclick="closeUpdateModal()">Cancel</button></div>
+  </div>
+</div>
+
+<!-- ════ Daily Task Modal ════ -->
+<div class="task-modal-bg" id="taskModalBg">
+  <div class="task-modal">
+    <button class="task-modal-close" onclick="closeTaskModal()">✕</button>
+    <div class="task-modal-header">
+      <div class="task-modal-icon" id="taskModalIcon">🌅</div>
+      <div>
+        <div class="task-modal-title" id="taskModalTitle">Task</div>
+        <div class="task-modal-reward">+RM<span id="taskModalReward">1</span> upon completion</div>
+      </div>
+    </div>
+
+    <!-- ★★ Q2. NO NAME IS COLLECTED ON THIS PATH AT ALL — no picker, and the
+         STAFF selection is not read either. A daily task pays the SHOP (KD-010:
+         RM5 to everybody who was there that day), updateTaskReward takes token
+         + task_id and no name (src/Api.js:840-841), and uploadTaskPhotos now
+         names its Drive folder from the session's own account
+         (src/Api.js:1985). Asking "who did this?" anywhere on this screen would
+         teach the promoters that tasks are a personal scoreboard, and the thing
+         we actually want them doing is selling. -->
+
+    <!-- Photo grid -->
+    <div class="task-photo-grid" id="taskPhotoGrid"></div>
+    <!-- Camera viewfinder (shown when user taps a slot) -->
+    <div id="taskCamOverlay" style="display:none;flex-direction:column;gap:10px;">
+      <div style="position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:4/3;width:100%;">
+        <video id="taskVideo" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:block;"></video>
+        <div id="taskCamSlotLabel" style="position:absolute;top:10px;left:0;right:0;text-align:center;">
+          <span style="background:rgba(0,0,0,.5);color:#fff;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:2px;padding:3px 10px;border-radius:20px;"></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="cancelTaskCam()" style="flex:1;height:44px;border-radius:10px;border:1.5px solid var(--border2);background:var(--bg);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;">✕ Cancel</button>
+        <button onclick="doTaskCapture()" id="taskCaptureBtn" style="flex:2;height:44px;border-radius:10px;border:none;background:var(--green);font-family:'DM Sans',sans-serif;font-size:15px;font-weight:700;color:#fff;cursor:pointer;">📷 Capture</button>
+      </div>
+    </div>
+    <div class="task-photo-hint" id="taskPhotoHint">Tap each slot to take photo</div>
+    <button class="task-submit-btn" id="taskSubmitBtn" onclick="submitTask()" disabled>Submit Task</button>
+    <div class="task-status" id="taskStatus"></div>
+  </div>
+</div>
+<!-- Camera for task photos (hidden) -->
+<canvas id="taskCanvas" style="display:none;"></canvas>
+
+<!-- ── Celebration Modal ─────────────────────────────── -->
+<div id="taskCelebModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:20px;padding:36px 32px;text-align:center;max-width:320px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.25);animation:popIn 0.3s ease">
+    <div id="celebEmoji" style="font-size:56px;margin-bottom:8px"></div>
+    <div id="celebTitle" style="font-size:20px;font-weight:700;color:#2d2d2d;margin-bottom:10px"></div>
+    <div id="celebMsg" style="font-size:14px;color:#555;white-space:pre-line;line-height:1.6"></div>
+  </div>
+</div>
+</div>
+
+<div id="headline"></div>
+<div id="message"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // The door. KB-004: never rendered, never editable from the page.
+  var SHEET_URL = 'https://script.google.com/macros/s/AKfycbwhNuIoDSgI_mwYEWkrdbbVJlkYjFMNwyc0ZwlGLphp42ebVyfn0pF3DV0WsSDeXulzNA/exec';
+
+  // ★ The only key this page writes. The token and nothing else — no store
+  //   name, no email, no password. The store name comes back from whoami, so
+  //   caching it here would be a second copy of one answer.
+  var TOKEN_KEY = 'tongah_kiosk_token';
+
+  // ★ Real numbers, read from src/Throttle.js, not estimated:
+  //   THR_EMAIL_LIMIT = 5 (src/Throttle.js:50)
+  //   THR_WINDOW_MS = 60000 in FIXED buckets — Math.floor(now / 60000)
+  //   (src/Throttle.js:75, :182), so the count resets on the wall-clock minute.
+  var LIMIT_PER_MINUTE = 5;
+
+  var loginView  = document.getElementById('loginView');
+  var sessionView= document.getElementById('sessionView');
+  var emailEl    = document.getElementById('email');
+  var passwordEl = document.getElementById('password');
+  var loginBtn   = document.getElementById('loginBtn');
+  var logoutBtn  = document.getElementById('logoutBtn');
+  var headlineEl = document.getElementById('headline');
+  var messageEl  = document.getElementById('message');
+
+  /**
+   * Send one request to the door.
+   * ★ KD-006: text/plain, no other headers. Adding any would make the browser
+   *   send a preflight the deployment does not answer.
+   * Resolves to { reached: true, status, raw } when the network answered at
+   * all, or { reached: false, error } when it never got there.
+   */
+  function call(payload) {
+    return fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      redirect: 'follow'
+    }).then(function (response) {
+      return response.text().then(function (raw) {
+        return { reached: true, status: response.status, raw: raw };
+      });
+    }).catch(function (error) {
+      return { reached: false, error: error };
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Reading one response
+  // -------------------------------------------------------------------------
+
+  /**
+   * Turn a call() result into exactly one of three outcomes:
+   *   { kind: 'ok',      data }   the door answered its own JSON and said yes
+   *   { kind: 'refused', data }   the door answered its own JSON and said no
+   *   { kind: 'offline', error }  we never got the door's JSON at all
+   *
+   * ★★ Anything that will not JSON.parse is 'offline', NOT 'refused'. A Google
+   *    error page, a captive portal login, a proxy notice — none of them are the
+   *    backend turning anyone away, and calling them INVALID would send somebody
+   *    to re-type a password that was never wrong.
+   */
+  function readResponse(result) {
+    if (!result.reached) {
+      return { kind: 'offline', error: result.error };
+    }
+
+    var data;
+    try {
+      data = JSON.parse(result.raw);
+    } catch (parseError) {
+      return { kind: 'offline', error: parseError };
+    }
+
+    if (!data || typeof data !== 'object') {
+      return { kind: 'offline', error: null };
+    }
+    if (data.ok !== true) {
+      // ★★ SEASON_ENDED is the one refusal the backend is willing to explain.
+      //    src/Auth.js decides it above every account lookup, so it says
+      //    nothing about the email or the password — which is precisely why it
+      //    may be shown as itself instead of being folded into the uniform
+      //    INVALID. It is NOT a bad password and it is NOT a network fault.
+      if (data.error === 'SEASON_ENDED') {
+        return { kind: 'season_ended', data: data };
+      }
+      return { kind: 'refused', data: data };
+    }
+    return { kind: 'ok', data: data };
+  }
+
+  // -------------------------------------------------------------------------
+  // The two views
+  // -------------------------------------------------------------------------
+
+  function say(cssClass, headline, message) {
+    headlineEl.className = cssClass;
+    headlineEl.textContent = headline;
+    messageEl.className = cssClass;
+    messageEl.textContent = message;
+  }
+
+  // ★ P2. The login screen's own chrome — the title and the two message lines —
+  //   belongs to the door and not to the dashboard. Once there is a session it
+  //   is all hidden: the store name is in the topbar, where somebody standing at
+  //   the kiosk can actually see it.
+  var loginChrome = [document.querySelector('h1'), headlineEl, messageEl];
+
+  function showLoginChrome(on) {
+    for (var i = 0; i < loginChrome.length; i++) {
+      if (!loginChrome[i]) { continue; }
+      if (on) { loginChrome[i].classList.remove('hidden'); }
+      else    { loginChrome[i].classList.add('hidden'); }
+    }
+  }
+
+  function showLoginView() {
+    loginView.classList.remove('hidden');
+    sessionView.classList.add('hidden');
+    showLoginChrome(true);
+    passwordEl.value = '';
+  }
+
+  function showSessionView(store) {
+    loginView.classList.add('hidden');
+    sessionView.classList.remove('hidden');
+    passwordEl.value = '';
+    say('', '', '');
+    showLoginChrome(false);
+    // ★ P2. The store now appears in the topbar (renderDash fills it), so this
+    //   no longer writes it at the bottom of the page where nobody looked.
+    var topStore = document.getElementById('topStore');
+    if (topStore) { topStore.textContent = ' · ' + String(store); }
+    // ★ T4(a). The dashboard's own start-up — what legacy/raya2026/index.html:2103
+    //   used to run at parse time — happens HERE and nowhere else, so nothing on
+    //   that screen ticks, syncs or renders before there is a session. Both ways
+    //   in (login and the whoami on boot) come through this one function.
+    if (typeof window.startDashboard === 'function') { window.startDashboard(); }
+  }
+
+  /** ★ Reached the door and the door said no — and it will not say which no. */
+  function showRefused() {
+    say('fail',
+        'Cannot log in',
+        'The backend answered, and it will not let you in. ★ It does NOT say ' +
+        'which of these it is — all three give exactly the same answer:\n' +
+        '  (1) this email is not in the system\n' +
+        '  (2) the password is wrong\n' +
+        '  (3) too many tries in one minute' +
+        ' (max ' + LIMIT_PER_MINUTE + ' per email per minute)\n\n' +
+        'Do these three things, in order:\n' +
+        '  1. Check the email for typos (no extra spaces)\n' +
+        '  2. Make sure the password is the one issued to THIS shop\n' +
+        '  3. ★ Wait one minute and try again. The count resets on the clock ' +
+        'minute. Tapping Login over and over keeps you blocked.');
+  }
+
+  /**
+   * ★★ The season is over. This is the ONLY failure this page is allowed to
+   *    explain, and the explanation must not drift towards the password: the
+   *    backend decided this before it looked at any credential, so the person
+   *    reading it may well have typed everything correctly.
+   */
+  function showSeasonEnded() {
+    say('fail',
+        'This season has ended',
+        'This address has been switched off. NOBODY can log in now — ' +
+        'this has nothing to do with your email or your password, and it is ' +
+        'not a network problem.\n\n' +
+        '★ Please contact the owner.');
+  }
+
+  /** ★ Never reached the door. Says nothing about the password. */
+  function showOffline() {
+    say('fail',
+        'Cannot reach the backend',
+        'This request NEVER GOT THERE, so nothing has been checked.\n' +
+        '★ This does NOT mean the password is wrong — nothing has looked at ' +
+        'it yet.\n\n' +
+        'Check the network connection, then press Login again.');
+  }
+
+  // -------------------------------------------------------------------------
+  // Waiting. KB-038: a cold start was measured at 15.2 s and 19.7 s.
+  // -------------------------------------------------------------------------
+
+  var waitTimer = null;
+
+  /**
+   * ★ The button is disabled the instant it is pressed, and the page then has to
+   *   prove it is still alive for up to twenty seconds. A frozen "Sending..."
+   *   for that long reads as a hung page: the promoter force-closes it and taps
+   *   Login again, and after five taps the limiter refuses him with the same
+   *   INVALID a wrong password gives (KB-038). So the text moves every second,
+   *   and at 5 s it explains WHY the wait is long instead of just being long.
+   */
+  function startWaiting() {
+    var seconds = 0;
+    stopWaiting();
+    say('wait', 'Logging in…', 'Please wait. Do not close this page.');
+    waitTimer = setInterval(function () {
+      seconds = seconds + 1;
+      var note = 'Please wait. Do not close this page. (' + seconds + 's)';
+      if (seconds >= 5) {
+        note = note + '\n★ The first start of the day is slow — usually 15 to ' +
+                      '20 seconds. This is normal, it is still running.\n' +
+                      '★ Do not close and retry — more than ' + LIMIT_PER_MINUTE +
+                      ' attempts in one minute gets you blocked for a while.';
+      }
+      say('wait', 'Logging in…', note);
+    }, 1000);
+  }
+
+  function stopWaiting() {
+    if (waitTimer !== null) {
+      clearInterval(waitTimer);
+      waitTimer = null;
+    }
+  }
+
+  function busy(on) {
+    loginBtn.disabled = on;
+    emailEl.disabled = on;
+    passwordEl.disabled = on;
+  }
+
+  // -------------------------------------------------------------------------
+  // The token
+  // -------------------------------------------------------------------------
+
+  function readToken() {
+    try {
+      return window.localStorage.getItem(TOKEN_KEY);
+    } catch (storageError) {
+      return null;
+    }
+  }
+
+  function writeToken(value) {
+    try {
+      window.localStorage.setItem(TOKEN_KEY, value);
+    } catch (storageError) {
+      // Storage refused (private mode, quota). The session still works for
+      // this page load; it just will not survive a refresh.
+    }
+  }
+
+  function clearToken() {
+    try {
+      window.localStorage.removeItem(TOKEN_KEY);
+    } catch (storageError) {
+      // Nothing to do. Never surfaced.
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // The three things this page does
+  // -------------------------------------------------------------------------
+
+  loginBtn.addEventListener('click', function () {
+    busy(true);
+    startWaiting();
+
+    // ★ The password is read here, put in the body, and never touched again.
+    //   It is not logged, not displayed and not stored.
+    call({
+      action: 'login',
+      email: emailEl.value,
+      password: passwordEl.value
+    }).then(function (result) {
+      stopWaiting();
+      busy(false);
+      passwordEl.value = '';
+
+      var outcome = readResponse(result);
+      if (outcome.kind === 'offline')      { showOffline();     return; }
+      if (outcome.kind === 'season_ended') { showSeasonEnded(); return; }
+      if (outcome.kind === 'refused')      { showRefused();     return; }
+
+      if (typeof outcome.data.token !== 'string') {
+        // Answered ok:true with no token. Not a refusal and not a network
+        // fault; treat it as not-logged-in rather than inventing a diagnosis.
+        showOffline();
+        return;
+      }
+      writeToken(outcome.data.token);
+      showSessionView(outcome.data.store);
+    });
+  });
+
+  logoutBtn.addEventListener('click', function () {
+    // ★★ T4(b). Every timer dies BEFORE the token does. A live 5-minute sync
+    //   after a logout is a request a minute from now with no token on it, an
+    //   INVALID coming back, and no screen anywhere saying so.
+    if (typeof window.stopDashboard === 'function') { window.stopDashboard(); }
+    clearToken();
+    say('', '', '');
+    showLoginView();
+  });
+
+  /**
+   * ★ On load, a stored token is CHECKED, never trusted. Sessions expire at one
+   *   fixed instant for all 19 stores at once (src/Auth.js:249), so a token that
+   *   worked last night is dead this morning for everybody simultaneously.
+   * ★★ A dead token is cleared IN SILENCE and the login screen appears with no
+   *   error on it. The person did nothing wrong and has nothing to fix — an
+   *   error message here would send him to check a password that is fine.
+   */
+  function boot() {
+    var stored = readToken();
+    if (stored === null || stored === '') {
+      showLoginView();
+      return;
+    }
+
+    busy(true);
+    say('wait', 'Checking your session…', '');
+
+    call({ action: 'whoami', token: stored }).then(function (result) {
+      busy(false);
+      var outcome = readResponse(result);
+
+      if (outcome.kind === 'ok') {
+        showSessionView(outcome.data.store);
+        return;
+      }
+      if (outcome.kind === 'refused') {
+        // Expired or revoked. Silent, by design.
+        clearToken();
+        say('', '', '');
+        showLoginView();
+        return;
+      }
+      if (outcome.kind === 'season_ended') {
+        // ★ whoami does not emit this today — only login does. Handled anyway,
+        //   because the fall-through below would call it a network fault, and a
+        //   wrong diagnosis is worse than an unreachable branch.
+        clearToken();
+        showLoginView();
+        showSeasonEnded();
+        return;
+      }
+      // ★ Offline is NOT a dead token. Keep it — the network came back once
+      //   and it will again. Deleting it here would log out every store in the
+      //   country the moment the wifi blinked.
+      showLoginView();
+      showOffline();
+    });
+  }
+
+  // ★ T3(d). The only three things the dashboard half is given. call() is handed
+  //   over UNTOUCHED (KD-006: text/plain, no headers, or the browser sends a
+  //   preflight this deployment does not answer).
+  window.call = call; window.readResponse = readResponse; window.TOKEN_KEY = TOKEN_KEY;
+
+  // ★ R6 needs two more: the one refusal this page is allowed to explain, and
+  //   the single way back to the door. The dashboard half must not own either —
+  //   a second copy of "how do we log somebody out" is how the two halves end up
+  //   disagreeing about whether there is a session.
+  window.showSeasonEnded = showSeasonEnded;
+  window.endSession = function () { clearToken(); say('', '', ''); showLoginView(); };
+
+  boot();
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     THE DASHBOARD, from legacy/raya2026/index.html:708-2104.
+     ★ Global on purpose (T3(b)): every control above is an inline
+       onclick="switchTab(...)" and an IIFE would kill all of them.
+     ★ Last in the body (T3(a)): legacy/raya2026/index.html:2106, :2138 and
+       :2141 sat AFTER its own script, and they are now above this line.
+     ★ legacy/raya2026/index.html:709's SHEET_URL is GONE — that was the Raya
+       deployment. The one constant is index.html's own, above.
+     ════════════════════════════════════════════════════════════════════════ -->
+<script>
+// ★ T3(e). The 5-minute auto-sync period, named. Value unchanged.
+var AUTO_SYNC_MS = 300000;
+// ★ T4(b). Timer handles, so logout can stop every one of them. `syncTimer` is
+//   legacy's own var, declared below and set inside startAutoSync().
+var clockTimer = null, feedTimer = null, taskDateTimer = null;
+var dashboardStarted = false;
+var selEmp=null, camStream=null, syncTimer=null, lastData=null, stockData=null;
+var punchState={}; // {empName: "IN"/"OUT"} last punch type per employee today
+var t3UnlockShown=false; // only show T3 unlock popup once per session
+
+// ── The door, from this side ───────────────────────────────
+//
+// ★★ R6. THE ONE PLACE THAT DECIDES WHAT A FAILURE MEANS. Every read and every
+//    write on this page goes through kdSend(), and nothing else interprets a
+//    refusal. Two copies of this rule would answer differently on some day
+//    nobody is watching, and the thing they disagree about is whether to throw
+//    a promoter back to the login screen mid-count.
+//
+// ★★ AND THE REASON IT IS NOT A ONE-LINER: the backend answers a dead token and
+//    a bad field with the SAME {"ok":false,"error":"INVALID"} (src/Api.js:71,
+//    and apiFailure_ is called with no argument from both). A quantity of 0, a
+//    blank remark and an expired session are one value on the wire. So INVALID
+//    is not treated as an answer — it is treated as a QUESTION, and whoami is
+//    what answers it. Logging somebody out because they typed a 0 is the exact
+//    failure this function exists to stop.
+// ★ The extra whoami only ever happens on the failing path. A successful submit
+//   costs one request, as before.
+
+function kdToken(){
+  try{ return window.localStorage.getItem(window.TOKEN_KEY); }catch(e){ return null; }
+}
+
+/**
+ * One request, one verdict. `payload` carries the action and its own fields;
+ * the token is attached here so no call site can forget it.
+ *
+ * Resolves to { verdict, data }, where verdict is exactly one of:
+ *   'ok'           the backend said yes; `data` is its answer
+ *   'confirm'      CONFIRM_REQUIRED — somebody else counted this SKU today
+ *   'sales_cell'   SALES_CELL_UNREADABLE — `data.row` names the sheet row
+ *   'season_ended' the season is over
+ *   'offline'      never reached the door — ★ THE TOKEN IS KEPT
+ *   'rejected'     the door refused THIS request, and whoami says we are still
+ *                  logged in — so it is the content, not the session
+ *   'dead'         whoami agrees the session is gone
+ */
+async function kdSend(payload){
+  var token = kdToken();
+  if(token===null || token===""){ return { verdict:"dead", data:null }; }
+
+  var body = { token: token };
+  for(var k in payload){ if(Object.prototype.hasOwnProperty.call(payload,k)) body[k]=payload[k]; }
+
+  var outcome = window.readResponse(await window.call(body));
+
+  if(outcome.kind==="ok")            { return { verdict:"ok",           data:outcome.data }; }
+  if(outcome.kind==="offline")       { return { verdict:"offline",      data:null }; }
+  if(outcome.kind==="season_ended")  { return { verdict:"season_ended", data:outcome.data }; }
+
+  var err = outcome.data ? outcome.data.error : null;
+  if(err==="CONFIRM_REQUIRED")      { return { verdict:"confirm",    data:outcome.data }; }
+  if(err==="SALES_CELL_UNREADABLE") { return { verdict:"sales_cell", data:outcome.data }; }
+
+  // ★ Ambiguous. Ask.
+  var probe = window.readResponse(await window.call({ action:"whoami", token: token }));
+  if(probe.kind==="ok")           { return { verdict:"rejected",     data:outcome.data }; }
+  if(probe.kind==="offline")      { return { verdict:"offline",      data:null }; }
+  if(probe.kind==="season_ended") { return { verdict:"season_ended", data:probe.data }; }
+  return { verdict:"dead", data:outcome.data };
+}
+
+/**
+ * The standard reaction to a non-'ok' verdict. `what` names the thing that was
+ * being attempted, so the message says which action failed.
+ * ★ Returns nothing. 'confirm' and 'sales_cell' are NOT handled here — they are
+ *   the caller's business, because only the caller knows what to re-send.
+ */
+function kdFail(res, what){
+  if(res.verdict==="offline"){
+    setSyncUI("err","OFFLINE");
+    showToast(what+": cannot reach the backend. NOTHING was sent. You are still "+
+                   "logged in — check the network and try again.","err",7000);
+    return;
+  }
+  if(res.verdict==="rejected"){
+    showToast(what+": did not go through. Check what you filled in and try again. "+
+                   "(Your session is fine.)","err",7000);
+    return;
+  }
+  if(res.verdict==="season_ended"){ kdSessionDead(true); return; }
+  if(res.verdict==="dead"){ kdSessionDead(false); return; }
+}
+
+/** ★ The only way out. Timers first, then the token, then the door. */
+function kdSessionDead(seasonEnded){
+  stopDashboard();
+  window.endSession();
+  if(seasonEnded){ window.showSeasonEnded(); }
+}
+
+// ── Clock ──────────────────────────────────────────────────
+function tick(){
+  var n=new Date();
+  document.getElementById("liveClock").textContent=n.toLocaleTimeString("en-MY",{hour12:false});
+  document.getElementById("liveDate").textContent=n.toLocaleDateString("en-MY",{weekday:"short",day:"numeric",month:"short"});
+}
+
+// ── Tab switching ──────────────────────────────────────────
+function switchTab(name,btn){
+  document.querySelectorAll(".tab-panel").forEach(function(p){p.classList.remove("active");});
+  document.querySelectorAll(".tab-btn").forEach(function(b){b.classList.remove("active");});
+  document.getElementById("tab-"+name).classList.add("active");
+  if(btn) btn.classList.add("active");
+  if(name==="stock") loadStockTab();
+  if(name==="reorder") loadReorderTab();
+}
+
+// ★ jsonpFetch is GONE. It was a GET with a callback= parameter, and the
+//   deployment this page now talks to serves doPost only (KD-028 item 1). Its
+//   three callers are the three reads below, all of which go through kdSend().
+
+function setSyncUI(s,l){document.getElementById("syncDot").className="sync-dot"+(s?" "+s:"");document.getElementById("syncText").textContent=l;}
+
+// ── Sales Data ─────────────────────────────────────────────
+function animN(el,to){
+  if(isNaN(to)) return;
+  var from=parseFloat(el.textContent.replace(/[RM,—%]/g,""))||0;
+  var t0=performance.now(),dur=900;
+  function step(t){var p=Math.min((t-t0)/dur,1),e=1-Math.pow(1-p,3);el.textContent=Math.round(from+(to-from)*e).toLocaleString();if(p<1)requestAnimationFrame(step);}
+  requestAnimationFrame(step);
+}
+
+function setBadge(el,cur,tgt){
+  // ★ null target = not configured; null current = nobody has submitted. Neither
+  //   is a miss, and neither may be drawn as one.
+  if(tgt===null||tgt===undefined||!tgt||cur===null||cur===undefined){
+    el.textContent="—";el.className="badge bm";return;}
+  var pct=cur/tgt*100;
+  if(cur>=tgt)    {el.textContent="Hit ✓";el.className="badge bh";}
+  else if(pct>=80){el.textContent="Close!";el.className="badge bc";}
+  else            {var gap=tgt-cur;el.textContent=gap>=1000?"RM "+(gap/1000).toFixed(1)+"k":"RM "+gap.toLocaleString();el.className="badge bm";}
+}
+
+
+var salesVisible = false;
+var salesHideTimer = null;
+// ★ null until a sync says otherwise — NOT 0. See kdNum().
+var salesRealDaily = null, salesRealTotal = null;
+
+function toggleSalesVis(){
+  if(salesHideTimer){ clearTimeout(salesHideTimer); salesHideTimer=null; }
+  salesVisible = !salesVisible;
+  updateSalesMask();
+  if(salesVisible){
+    salesHideTimer = setTimeout(function(){ salesVisible=false; updateSalesMask(); }, 3000);
+  }
+}
+
+function updateSalesMask(){
+  var dailyEl = document.getElementById("dailyAmt");
+  var totalEl = document.getElementById("totalAmt");
+
+  if(salesVisible){
+    // ★ "Not submitted" is not RM0 — the owner pre-fills the date column ahead
+    //   (KD-023c), so a blank today row is normal and must not read as a zero day.
+    dailyEl.textContent = (salesRealDaily===null) ? "Not submitted" : salesRealDaily.toLocaleString();
+    totalEl.textContent = (salesRealTotal===null) ? "—" : salesRealTotal.toLocaleString();
+
+  } else {
+    dailyEl.innerHTML = "–&thinsp;–";
+    totalEl.innerHTML = "–&thinsp;–";
+  }
+}
+
+// ★★ NULL IS NOT ZERO, ANYWHERE ON THIS SCREEN. src/Api.js:2451 and :2499 say a
+//    blank cell comes back as null and a real 0 comes back as 0 — "nobody has
+//    submitted yet" and "we sold nothing" are different sentences, and the owner
+//    reconciles this screen against paper. legacy's `d.daily_sales||0` erased
+//    that distinction on every field it touched.
+function kdNum(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
+function kdShow(v){ return v===null ? "—" : v.toLocaleString(); }
+function kdMoney(v){ return v===null ? "Not set" : "RM "+v.toLocaleString(); }
+
+function renderDash(d){
+  lastData=d;
+
+  var ds=kdNum(d.daily_sales), ts=kdNum(d.total_sales);
+  var t1=kdNum(d.t1), t2=kdNum(d.t2), t3=kdNum(d.t3);
+  var b1=kdNum(d.bonus1), b2=kdNum(d.bonus2), b3=kdNum(d.bonus3);
+  var tt1=kdNum(d.tt1), tt2=kdNum(d.tt2), tt3=kdNum(d.tt3);
+  var rates=d.comm_rates||{};
+
+  salesRealDaily=ds; salesRealTotal=ts;
+  updateSalesMask();
+
+  function tierRow(bId,pId,tId,rightId,bdId,cur,tgt,right,isMoney){
+    var live=(cur!==null && tgt!==null && tgt>0);
+    var pct=live?Math.min(cur/tgt*100,100):0;
+    document.getElementById(bId).style.width=pct+"%";
+    document.getElementById(pId).textContent=live?pct.toFixed(0)+"%":"—";
+    document.getElementById(tId).textContent=kdMoney(tgt);
+    var rEl=document.getElementById(rightId);
+    if(rEl) rEl.textContent=(right===null)?"—":(isMoney?"RM "+right.toLocaleString():right+"%");
+    setBadge(document.getElementById(bdId),cur,tgt);
+  }
+
+  tierRow("t1Bar","t1Pct","t1Tgt","t1Bonus","t1Badge",ds,t1,b1,true);
+  tierRow("t2Bar","t2Pct","t2Tgt","t2Bonus","t2Badge",ds,t2,b2,true);
+
+  // T3 stays locked until T1 is hit today — legacy's rule, kept.
+  var t3row=document.getElementById("t3Bar") && document.getElementById("t3Bar").closest(".tier-row");
+  var t3unlocked=(t3!==null && ds!==null && t1!==null && t1>0 && ds>=t1);
+  if(t3!==null && t3unlocked){
+    tierRow("t3Bar","t3Pct","t3Tgt","t3Bonus","t3Badge",ds,t3,b3,true);
+    if(t3row) t3row.style.opacity="1";
+  } else {
+    document.getElementById("t3Bar").style.width="0%";
+    document.getElementById("t3Pct").textContent=(t3===null)?"—":"🔒";
+    document.getElementById("t3Tgt").textContent=(t3===null)?"Not set":"Hit T1 to unlock";
+    document.getElementById("t3Bonus").textContent=kdMoney(b3);
+    document.getElementById("t3Badge").textContent=(t3===null)?"—":"🔒";
+    document.getElementById("t3Badge").className="badge bm";
+    if(t3row) t3row.style.opacity="0.45";
+  }
+
+  // ★★ THE TIER AND THE MONEY ARE THE SERVER'S. src/Api.js:2460-2464 already
+  //    walked the ladder (highest first, nothing accumulates — KD-019) and
+  //    src/Sales.js:260 decided what qualifies. Re-deciding it here is how the
+  //    screen and the payslip end up disagreeing with nothing erroring.
+  var cA=document.getElementById("commAmt"), cS=document.getElementById("commStatus");
+  var dc=document.getElementById("dailyCard");
+  var earned=kdNum(d.bonus_earned), tier=d.bonus_tier;
+
+  if(d.bonus_targets_out_of_order===true){
+    cA.textContent="—";
+    cS.textContent="Bad targets"; cS.className="badge bm";
+    dc.classList.remove("glow-gold");
+    showToast("⚠ Today's T1/T2/T3 targets are not in ascending order, so no tier can be judged. Please tell the owner to check today's SALES row.","err",8000);
+  } else if(tier){
+    cA.textContent=(earned===null)?"—":earned.toLocaleString();
+    cS.textContent=tier+" Hit!"; cS.className="badge "+(tier==="T1"?"bc":"bh");
+    dc.classList.add("glow-gold");
+  } else {
+    cA.textContent=(earned===null)?"—":earned.toLocaleString();
+    cS.textContent=(ds===null)?"Not submitted":"Not yet"; cS.className="badge bm";
+    dc.classList.remove("glow-gold");
+  }
+  // ★ There is no season-bonus total in the contract (src/Api.js:2446-2478), so
+  //   this says so rather than showing today's figure under a "TOTAL" label.
+  document.getElementById("totalBonusAmt").textContent="—";
+  var tbLbl=document.querySelector(".bonus-total-lbl");
+  if(tbLbl) tbLbl.textContent="TOTAL BONUS · not provided by backend";
+
+  if(t3!==null && t3unlocked && !t3UnlockShown){
+    t3UnlockShown=true;
+    setTimeout(function(){
+      showToast("🎉 T1 Hit! T3 Unlocked → RM "+t3.toLocaleString()+" — push for more!","ok",5000);
+    },500);
+  }
+
+  tierRow("tt1Bar","tt1Pct","tt1Tgt","tt1BonusPct","tt1Badge",ts,tt1,kdNum(rates.tt1),false);
+  tierRow("tt2Bar","tt2Pct","tt2Tgt","tt2BonusPct","tt2Badge",ts,tt2,kdNum(rates.tt2),false);
+  tierRow("tt3Bar","tt3Pct","tt3Tgt","tt3BonusPct","tt3Badge",ts,tt3,kdNum(rates.tt3),false);
+
+  // ★★ The commission is READ, never recomputed. legacy hard-coded BASE=0.5 here
+  //    and multiplied it out on the phone; src/Sales.js:183 is the one function
+  //    that decides this number and src/Api.js:2466 hands it over verbatim.
+  var comm=kdNum(d.commission), commRate=kdNum(d.comm_rate);
+  document.getElementById("overallComm").textContent=
+    (comm===null)?"—":comm.toLocaleString("en-MY",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  var pctLine;
+  if(ts===null || commRate===null){ pctLine="—"; }
+  else { pctLine=(d.comm_tier||"BASE")+" · "+commRate+"% × RM "+ts.toLocaleString(); }
+  // ★ Two rows dated today. src/Api.js:2453-2458: a reader cannot refuse, so it
+  //   shows the first and says so out loud instead of showing one of two truths.
+  if(d.sales_today_duplicate===true){ pctLine="⚠ Two sales rows dated today — only the first is used · "+pctLine; }
+  document.getElementById("overallPctRow").textContent=pctLine;
+
+  // ── Daily tasks: the server's list, never a local tally ──
+  var doneNow={};
+  (d.tasks||[]).forEach(function(t){ doneNow[t.task_id]={label:t.task_label, reward:t.reward}; });
+  tasksDone=doneNow;
+  renderDailyTasks();
+
+  var todayRew=kdNum(d.task_reward_today), seasonRew=kdNum(d.task_reward_season);
+  document.getElementById("taskRewardAmt").textContent=kdShow(todayRew);
+  document.getElementById("taskTotalAmt").textContent=kdShow(seasonRew);
+
+  // ── Topbar identity (P2) ──
+  var storeEl=document.getElementById("topStore");
+  if(storeEl){ storeEl.textContent=d.store ? " · "+d.store : ""; }
+  var evEl=document.getElementById("topEvent");
+  if(evEl){
+    // ★★ null means the field is not there to show. Not "—", not "null", and
+    //    not last season's name left standing (src/Api.js:2450 — the value is
+    //    the store file's own EVENT_NAME, and an older deployment does not send
+    //    the field at all, which reads as undefined here).
+    if(typeof d.event_name==="string" && d.event_name!==""){
+      evEl.textContent=" "+d.event_name;
+      evEl.classList.remove("hidden");
+    } else {
+      evEl.textContent="";
+      evEl.classList.add("hidden");
+    }
+  }
+
+  // ── Feed: clock only (R8) ──
+  renderFeed(d.roster||[]);
+  punchState={};
+  (d.roster||[]).forEach(function(r){ if(r.type) punchState[r.employee]=r.type; });
+}
+
+var selectedStaff = null;
+var selectedAction = null; // 'clock','FOC','Sample','Faulty'
+
+// ★ Takes getDashboard's roster[] — elements are { employee, type, time }
+//   (src/Api.js:2704), not the bare strings legacy's `employees[]` carried.
+//   `employee` is the same spelling submitClock replies with (src/Api.js:2206),
+//   deliberately, so the page needs one reader for people and not two.
+function renderEmps(roster){
+  var g=document.getElementById("empGrid"); g.innerHTML="";
+  var sel=document.getElementById("stockEmpSelect");
+  // ★ A 5-minute sync must not silently clear a name somebody already picked
+  //   half way through a count.
+  var keepStock=sel.value;
+  while(sel.options.length>1) sel.remove(1);
+  var emps=(roster||[]).map(function(r){ return r.employee; });
+  if(!emps.length){g.innerHTML="<div style=\"font-size:12px;color:var(--muted)\">No employees</div>";return;}
+  for(var i=0;i<emps.length;i++){
+    (function(name){
+      var b=document.createElement("button"); b.className="emp-btn"; b.textContent=name;
+      function handleStaffSelect(e){
+        e.preventDefault();
+        if(selectedStaff===name){
+          selectedStaff=null;
+          b.classList.remove("sel");
+        } else {
+          selectedStaff=name;
+          document.querySelectorAll(".emp-btn").forEach(function(x){x.classList.remove("sel");});
+          b.classList.add("sel");
+        }
+        checkAndTrigger();
+      }
+      b.addEventListener("touchend", handleStaffSelect, {passive:false});
+      b.addEventListener("click", function(e){
+        // Only fire click on non-touch devices to avoid double-fire
+        if(!("ontouchstart" in window)) handleStaffSelect(e);
+      });
+      g.appendChild(b);
+      var opt=document.createElement("option"); opt.value=name; opt.textContent=name;
+      sel.appendChild(opt);
+    })(emps[i]);
+  }
+  if(keepStock && emps.indexOf(keepStock)!==-1){ sel.value=keepStock; }
+  // ★ Redraw wipes the .sel highlight, so put it back on whoever is selected.
+  if(selectedStaff && emps.indexOf(selectedStaff)!==-1){
+    var btns=g.querySelectorAll(".emp-btn");
+    for(var n=0;n<btns.length;n++){
+      if(btns[n].textContent===selectedStaff){ btns[n].classList.add("sel"); }
+    }
+  } else if(selectedStaff){
+    selectedStaff=null;   // he is not on the roster any more
+  }
+}
+
+function updateActionBtns(){ /* buttons always enabled */ }
+
+function bindActionBtns(){
+  var map = [
+    {id:"actClock",  type:"clock"},
+    {id:"actFOC",      type:"FOC"},
+    {id:"actSample",   type:"Sample"},
+    {id:"actFaulty",   type:"Faulty"},
+    {id:"actTransfer", type:"Transfer"}
+  ];
+  map.forEach(function(item){
+    var btn = document.getElementById(item.id);
+    if(!btn) return;
+    function handleAct(e){
+      e.preventDefault();
+      triggerAction(item.type);
+    }
+    btn.addEventListener("touchend", handleAct, {passive:false});
+    btn.addEventListener("click", function(e){
+      if(!("ontouchstart" in window)) handleAct(e);
+    });
+  });
+}
+
+function triggerAction(type){
+  // Toggle action selection
+  if(selectedAction===type){
+    selectedAction=null;
+  } else {
+    selectedAction=type;
+  }
+  // Update button highlight
+  document.querySelectorAll(".act-btn").forEach(function(b){b.classList.remove("sel");});
+  if(selectedAction){
+    var map={"clock":"actClock","FOC":"actFOC","Sample":"actSample","Faulty":"actFaulty","Transfer":"actTransfer"};
+    var el=document.getElementById(map[selectedAction]);
+    if(el) el.classList.add("sel");
+  }
+  checkAndTrigger();
+}
+
+function checkAndTrigger(){
+  if(!selectedStaff || !selectedAction) return;
+  var staff=selectedStaff, action=selectedAction;
+  // Clear selections first
+  selectedStaff=null; selectedAction=null;
+  document.querySelectorAll(".emp-btn").forEach(function(b){b.classList.remove("sel");});
+  document.querySelectorAll(".act-btn").forEach(function(b){b.classList.remove("sel");});
+  // Trigger
+  if(action==="clock"){
+    openPunchModal(staff);
+  } else {
+    openActionModal(action, staff);
+  }
+}
+
+async function fetchSheets(silent){
+  setSyncUI("spin","SYNCING");
+  var res=await kdSend({action:"getDashboard"});
+  if(res.verdict!=="ok"){
+    setSyncUI("err","ERROR");
+    // ★ A failed READ never takes the screen down or logs anybody out on its
+    //   own — kdFail() decides that, and only after whoami has answered.
+    if(!silent || res.verdict==="dead" || res.verdict==="season_ended"){
+      kdFail(res,"Loading the dashboard");
+    }
+    return null;
+  }
+  setSyncUI("ok","LIVE");
+  renderDash(res.data);
+  renderEmps(res.data.roster||[]);
+  if(!silent) showToast("Refreshed","ok");
+  return res.data;
+}
+
+function manualRefresh(){fetchSheets(false);}
+function startAutoSync(){fetchSheets(true);syncTimer=setInterval(function(){fetchSheets(true);},AUTO_SYNC_MS);} // 5 min auto-sync
+
+// ── Stock Tab ──────────────────────────────────────────────
+var stockProducts=[];
+
+async function loadStockTab(){
+  var tbody=document.getElementById("stockTableBody");
+  tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);font-family:DM Mono,monospace;font-size:12px;">Loading…</td></tr>';
+  var res=await kdSend({action:"getStock"});
+  if(res.verdict!=="ok"){
+    tbody.innerHTML='<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--red);font-size:12px;">Could not load the stock count. Nothing on this page was sent.</td></tr>';
+    kdFail(res,"Loading the stock count");
+    return;
+  }
+  var d=res.data;
+  // ★ items[], and the list is PAR's (src/Api.js:2730-2732) — a SKU shown here
+  //   but missing a PAR row is refused by submitStock as a whole batch (KD-018).
+  stockData=d; stockProducts=d.items||[];
+  document.getElementById("stockSubtitle").textContent=d.store+" · "+d.date;
+  document.getElementById("stockSubmittedBanner").style.display=d.submitted?"block":"none";
+  renderStockTable(stockProducts);
+}
+
+// ★★ FOUR NUMBERS, NOT ONE. legacy folded all four into `action_total`
+//    (legacy/raya2026/Code.gs:369) while the STOCKS tab keeps four columns for
+//    them (KD-039 §2). One screen showing a combined figure against a server
+//    writing four is two arithmetically-correct numbers that disagree forever.
+function kdActionCell(p){
+  return '<span title="Sample">S'+(p.sample||0)+'</span> '
+       + '<span title="Faulty">F'+(p.faulty||0)+'</span> '
+       + '<span title="FOC">G'+(p.foc||0)+'</span> '
+       + '<span title="Stock-out transfer">T'+(p.stock_out_transfer||0)+'</span>';
+}
+
+/** ★ Per SKU, never per page (src/Api.js:2875-2884). */
+function kdStockWho(p){
+  if(!p.submitted_by) return "";
+  return '<div style="font-size:10px;color:var(--muted);font-family:DM Mono,monospace">✓ '
+       + p.submitted_by + (p.submitted_at ? " · "+p.submitted_at : "") + '</div>';
+}
+
+/** ★ The four action figures are always numbers (src/Api.js:2857-2863). */
+function kdActionTotal(p){
+  return (p.sample||0)+(p.faulty||0)+(p.foc||0)+(p.stock_out_transfer||0);
+}
+
+function renderStockTable(products){
+  var tbody=document.getElementById("stockTableBody");
+  tbody.innerHTML="";
+  document.getElementById("stockTotal").textContent=products.length;
+  for(var i=0;i<products.length;i++){
+    var p=products[i];
+    var tr=document.createElement("tr"); tr.id="stock-row-"+i;
+    var hq=p.stock_in_hq!==null?p.stock_in_hq:"";
+    var tf=p.stock_in_transfer!==null?p.stock_in_transfer:"";
+    var sl=p.sales!==null?p.sales:"";
+    var cl=p.closing_cd!==null?p.closing_cd:"";
+    var rm=p.remarks||"";
+    tr.innerHTML=
+      '<td class="sku-code">'+p.sku+'</td>'
+      +'<td class="sku-name">'+p.name+kdStockWho(p)+'</td>'
+      +'<td style="text-align:center;font-family:DM Mono,monospace;font-size:13px;color:var(--blue);font-weight:600">'+p.opening_bd+'</td>'
+      +'<td style="text-align:center"><input class="qty-input" type="number" min="0" placeholder="0" value="'+hq+'" data-idx="'+i+'" data-field="stock_in_hq" oninput="onStockInput(this)"></td>'
+      +'<td style="text-align:center"><input class="qty-input" type="number" min="0" placeholder="0" value="'+tf+'" data-idx="'+i+'" data-field="stock_in_transfer" oninput="onStockInput(this)"></td>'
+      +'<td style="text-align:center"><input class="qty-input" type="number" min="0" placeholder="0" value="'+sl+'" data-idx="'+i+'" data-field="sales" oninput="onStockInput(this)"></td>'
+      +'<td style="text-align:center;background:#fff5f5;font-family:DM Mono,monospace;font-weight:600;font-size:11px;color:var(--red)" id="action-'+i+'" title="Sample / Faulty / FOC / Transfer — four separate figures, not one total">'+kdActionCell(p)+'</td>'
+      +'<td style="text-align:center;background:var(--blue-bg);font-family:DM Mono,monospace;font-weight:700;color:var(--blue);font-size:14px" id="expected-'+i+'">—</td>'
+      +'<td style="text-align:center"><input class="qty-input" type="number" min="0" placeholder="—" value="'+cl+'" data-idx="'+i+'" data-field="closing_cd" id="closing-'+i+'" oninput="onClosingInput(this)" style="background:var(--gold-bg);border-color:var(--gold-border);width:72px"></td>'
+      +'<td><input type="text" placeholder="Remarks if closing ≠ expected" value="'+rm+'" data-idx="'+i+'" id="remarks-'+i+'" oninput="stockProducts[parseInt(this.dataset.idx)].remarks=this.value;checkRemarks(parseInt(this.dataset.idx))" disabled style="width:100%;min-width:120px;font-size:12px;padding:6px 8px;border:1.5px solid var(--border2);border-radius:6px;outline:none;background:var(--surface2);color:var(--muted);cursor:not-allowed"></td>';
+    tbody.appendChild(tr);
+    recalcRow(i);
+  }
+  updateStockProgress();
+}
+
+function getFieldVal(idx, field){
+  var row=document.getElementById("stock-row-"+idx); if(!row) return 0;
+  var el=row.querySelector('[data-field="'+field+'"]');
+  return (el&&el.value!=="") ? (parseFloat(el.value)||0) : 0;
+}
+
+function recalcRow(idx){
+  var p=stockProducts[idx];
+  var opening=p.opening_bd||0;
+  var hq=getFieldVal(idx,"stock_in_hq"), tf=getFieldVal(idx,"stock_in_transfer");
+  var subtotal=opening+hq+tf;
+  var sales=getFieldVal(idx,"sales");
+  // ★ Same arithmetic as before; the total is now summed from the four fields
+  //   the contract actually carries, and only for this calculation.
+  var action=kdActionTotal(p);
+  var expected=subtotal-sales-action;
+
+  var exEl=document.getElementById("expected-"+idx);
+  if(exEl){ exEl.textContent=expected; exEl.style.color=expected<0?"var(--red)":"var(--blue)"; }
+
+  p.stock_in_hq=hq; p.stock_in_transfer=tf;
+  p.sales=sales;
+
+  // Auto-set closing to expected unless user has overridden
+  var closingEl=document.getElementById("closing-"+idx);
+  if(closingEl && !p.closing_overridden){
+    closingEl.value=expected; p.closing_cd=expected;
+  }
+  checkRemarks(idx);
+  updateStockProgress();
+}
+
+function onStockInput(input){ recalcRow(parseInt(input.dataset.idx)); }
+
+function onClosingInput(input){
+  var idx=parseInt(input.dataset.idx), p=stockProducts[idx];
+  p.closing_cd=input.value===""?null:parseFloat(input.value)||0;
+  var exEl=document.getElementById("expected-"+idx);
+  var expected=exEl?parseFloat(exEl.textContent)||0:0;
+  p.closing_overridden=(p.closing_cd!==null && p.closing_cd!==expected);
+  input.style.borderColor=p.closing_overridden?"var(--amber)":"var(--gold-border)";
+  input.style.background=p.closing_overridden?"var(--amber-bg)":"var(--gold-bg)";
+  checkRemarks(idx);
+}
+
+function checkRemarks(idx){
+  var p=stockProducts[idx];
+  var exEl=document.getElementById("expected-"+idx);
+  var expected=exEl?parseFloat(exEl.textContent)||0:0;
+  var rmEl=document.getElementById("remarks-"+idx); if(!rmEl) return;
+  var needRmk=(p.closing_cd!==null && p.closing_cd!==expected);
+  if(needRmk){
+    rmEl.disabled=false;
+    rmEl.style.background="";
+    rmEl.style.cursor="text";
+    rmEl.style.color="";
+    rmEl.style.borderColor=(!p.remarks)?"var(--red)":"var(--border2)";
+  } else {
+    rmEl.disabled=true;
+    rmEl.value=""; p.remarks="";
+    rmEl.style.background="var(--surface2)";
+    rmEl.style.cursor="not-allowed";
+    rmEl.style.color="var(--muted)";
+    rmEl.style.borderColor="var(--border2)";
+  }
+}
+
+function updateStockProgress(){
+  var filled=stockProducts.filter(function(p){return p.sales!==null;}).length;
+  document.getElementById("stockFilled").textContent=filled;
+  // Never disable submit button — allow resubmit anytime
+}
+
+// ★ True only while a confirmed re-send is in flight. KD-039 §4's consent is
+//   not a mode the page sits in.
+var stockOverwriteConsent=false;
+
+function kdStockConfirmText(title,body,sub){
+  document.getElementById("stockConfirmTitle").textContent=title;
+  document.getElementById("stockConfirmBody").textContent=body;
+  document.getElementById("stockConfirmSub").textContent=sub||"";
+}
+
+/**
+ * The rows this page will send, or null if something is missing. ★★ sales and
+ * closing_cd MUST be present — src/Api.js:1605-1615 refuses the WHOLE batch
+ * otherwise, and a batch refusal caused by the last SKU throws away an evening
+ * of counting with nothing saying which line did it (R10).
+ * ★ Only the six fields the contract reads. name / par / opening_bd are not
+ *   among them (src/Api.js:1597-1621), so they are not sent.
+ */
+function kdStockItems(){
+  var out=[];
+  for(var i=0;i<stockProducts.length;i++){
+    var p=stockProducts[i];
+    var touched=(p.sales!==null&&p.sales!==undefined)||p.stock_in_hq||p.stock_in_transfer;
+    if(!touched) continue;
+    if(p.sales===null||p.sales===undefined||p.closing_cd===null||p.closing_cd===undefined){
+      showToast("\""+p.name+"\" has no Sales or no Closing yet. If either is missing, the WHOLE batch is refused.","err",7000);
+      var el=document.getElementById("closing-"+i); if(el) el.focus();
+      return null;
+    }
+    out.push({ sku:p.sku,
+               stock_in_hq:p.stock_in_hq||0,
+               stock_in_transfer:p.stock_in_transfer||0,
+               sales:p.sales,
+               closing_cd:p.closing_cd,
+               remarks:p.remarks||"" });
+  }
+  return out;
+}
+
+async function submitStock(){
+  var emp=document.getElementById("stockEmpSelect").value;
+  if(!emp){showToast("Please select employee","err");return;}
+
+  for(var v=0;v<stockProducts.length;v++){
+    var pv=stockProducts[v];
+    var exEl=document.getElementById("expected-"+v);
+    if(!exEl) continue;
+    var expected=parseFloat(exEl.textContent)||0;
+    if(pv.closing_cd!==null && pv.closing_cd!==expected && !(pv.remarks&&pv.remarks.trim())){
+      showToast("Remarks required for: "+pv.name,"err");
+      document.getElementById("remarks-"+v).focus(); return;
+    }
+  }
+
+  var items=kdStockItems();
+  if(items===null) return;
+  if(!items.length){showToast("Nothing to submit","err");return;}
+
+  var btn=document.getElementById("submitStockBtn");
+  btn.disabled=true; btn.textContent="Saving…";
+
+  var payload={action:"submitStock", employee:emp, items:items};
+  // ★★ Exactly boolean true, or the field is not sent at all (src/Api.js:1300).
+  if(stockOverwriteConsent===true){ payload.confirm_overwrite=true; }
+  var res=await kdSend(payload);
+  stockOverwriteConsent=false;
+  btn.disabled=false; btn.textContent="Submit Stock Count";
+
+  if(res.verdict==="confirm"){
+    // ★★ Somebody else counted one of these SKUs today. KD-039 §4 decides this
+    //    PER SKU and hands back that row's own `by` and `at`.
+    kdStockConfirmText("Somebody already counted today",
+      "An item in this batch was counted by "+(res.data.by||"?")+" at "+(res.data.at||"?")+". Confirming will overwrite it with your figures.",
+      // ★ Q3. The small line under this box is Chinese everywhere else in it
+      //   (legacy's own), so an English-only line here reads as a missed
+      //   translation rather than a deliberate one.
+      "此批中有商品由 "+(res.data.by||"?")+" 在 "+(res.data.at||"?")+" 盘点，确认后将用你的数字覆盖。");
+    stockOverwriteConsent=true;
+    document.getElementById("stockConfirmBg").classList.add("open");
+    return;
+  }
+  if(res.verdict!=="ok"){ kdFail(res,"Submitting the stock count"); return; }
+
+  showToast("Saved "+res.data.saved+" items ✓","ok");
+  document.getElementById("stockSubmittedBanner").style.display="block";
+  btn.textContent="✅ Submitted — Submit Again to Update";
+  stockData=null;
+  kdStockConfirmText("Ready to submit?",
+    "Make sure all FOC / Sample / Faulty / Transfer actions are recorded before submitting.",
+    "请确保所有 FOC / Sample / Faulty / Transfer 已记录后才提交。");
+  autoCompleteStockTask();
+}
+
+/**
+ * ★★ THE MONEY IS NOT ADDED UP HERE. R9: updateTaskReward answers with the
+ *    server's own figure for the day (src/Api.js:897) and the all-four bonus is
+ *    the server's arithmetic (src/Api.js:142, KD-010). The old code summed
+ *    DAILY_TASKS on the phone and posted a fifth `all_done_bonus` row — an id
+ *    apiFindDailyTask_ does not know (src/Api.js:134-139), so that write could
+ *    now only ever be refused. It is gone; the trophy stays, driven by what the
+ *    server says is done.
+ */
+async function autoCompleteStockTask(){
+  if(tasksDone["stockcount"]) return;
+
+  var now=new Date(), hour=now.getHours(), min=now.getMinutes();
+  if(hour<21 || (hour===21 && min<30)){
+    showToast("Stock Count saved ✓ — task completes after 9:30pm","ok",3000);
+    return;
+  }
+
+  var res=await kdSend({action:"updateTaskReward", task_id:"stockcount"});
+  if(res.verdict!=="ok"){ kdFail(res,"Recording the Stock Count task"); return; }
+
+  var done=res.data.tasks||[];
+  var allDone=DAILY_TASKS.every(function(t){ return done.indexOf(t.id)!==-1; });
+  showToast("📦 Stock Count task done · today's task reward RM"+res.data.reward,"ok");
+  if(allDone) showCelebration("all_done");
+  fetchSheets(true);
+}
+
+// ── Reorder Tab ────────────────────────────────────────────
+async function loadReorderTab(){
+  // ★ Same cache rule as before: only fetch when there is nothing fresh.
+  if(!stockData){
+    var res=await kdSend({action:"getStock"});
+    if(res.verdict!=="ok"){ kdFail(res,"Loading the reorder list"); return; }
+    stockData=res.data;
+  }
+  var products=stockData.items||[];
+  var date=stockData.date||"";
+  document.getElementById("reorderSubtitle").textContent="Based on stock count · "+date;
+
+  var urgent=[],low=[],ok=[];
+  products.forEach(function(p){
+    // ★ submitted_by is the PER-SKU answer (src/Api.js:2883); the page-level
+    //   `submitted` boolean says nothing about this particular line.
+    if(p.closing_cd===null&&!p.submitted_by) return;
+    var n=p.closing_cd!==null?Number(p.closing_cd):0, par=p.par, short=par-n;
+    if(n>=par) ok.push(p);
+    else if(n>=par*0.5) low.push({p:p,short:short});
+    else urgent.push({p:p,short:short});
+  });
+
+  // Summary chips
+  var sum=document.getElementById("reorderSummary");
+  sum.innerHTML='<div class="sum-chip urgent"><div class="num">'+urgent.length+'</div><div class="lbl">URGENT</div></div>'
+    +'<div class="sum-chip low"><div class="num">'+low.length+'</div><div class="lbl">LOW</div></div>'
+    +'<div class="sum-chip ok"><div class="num">'+ok.length+'</div><div class="lbl">SUFFICIENT</div></div>';
+
+  var grid=document.getElementById("reorderGrid");
+  if(!stockData.submitted && products.every(function(p){return p.closing_cd===null;})){
+    grid.innerHTML='<div class="reorder-no-count"><p>No stock count submitted yet today.</p><button class="submit-stock-btn" onclick="switchTab(\'stock\')" style="background:var(--blue)">Go to Stock Count →</button></div>';
+    return;
+  }
+  if(urgent.length===0&&low.length===0&&ok.length===0){
+    grid.innerHTML='<div class="reorder-empty">No stock count data yet for today.</div>';
+    return;
+  }
+
+  var html="";
+  urgent.forEach(function(item){
+    html+='<div class="reorder-card urgent"><div class="rc-icon">🔴</div><div class="rc-info"><div class="rc-name">'+item.p.name+'</div><div class="rc-sku">'+item.p.sku+' · '+item.p.unit+'</div></div><div class="rc-right"><div class="rc-qty urgent">+'+item.short+'</div><div class="rc-label">TO REORDER</div><div class="rc-actual">Have: '+(item.p.closing_cd!==null?item.p.closing_cd:0)+' / PAR: '+item.p.par+'</div></div></div>';
+  });
+  low.forEach(function(item){
+    html+='<div class="reorder-card low"><div class="rc-icon">⚠️</div><div class="rc-info"><div class="rc-name">'+item.p.name+'</div><div class="rc-sku">'+item.p.sku+' · '+item.p.unit+'</div></div><div class="rc-right"><div class="rc-qty low">+'+item.short+'</div><div class="rc-label">TO REORDER</div><div class="rc-actual">Have: '+(item.p.closing_cd!==null?item.p.closing_cd:0)+' / PAR: '+item.p.par+'</div></div></div>';
+  });
+  ok.forEach(function(item){
+    html+='<div class="reorder-card ok"><div class="rc-icon">✅</div><div class="rc-info"><div class="rc-name">'+item.name+'</div><div class="rc-sku">'+item.sku+' · '+item.unit+'</div></div><div class="rc-right"><div class="rc-qty ok">'+(item.closing_cd!==null?item.closing_cd:"—")+'</div><div class="rc-label">IN STOCK</div><div class="rc-actual">PAR: '+item.par+'</div></div></div>';
+  });
+  grid.innerHTML=html;
+}
+
+// ── Sales Update ───────────────────────────────────────────
+function openUpdateModal(){
+  var cur=(lastData&&lastData.daily_sales)?lastData.daily_sales:0;
+  document.getElementById("umInput").value=cur||"";
+  document.getElementById("updateModalBg").classList.add("open");
+  setTimeout(function(){var el=document.getElementById("umInput");el.focus();el.select();},100);
+}
+function closeUpdateModal(){document.getElementById("updateModalBg").classList.remove("open");}
+
+/**
+ * ★★ R10. A NUMBER, AND NOTHING THAT MERELY LOOKS LIKE ONE. `type=number` plus
+ *    parseFloat is not enough: on a phone keyboard the field accepts 'RM 1,200'
+ *    in several browsers, parseFloat returns NaN or 1, and the store either
+ *    cannot submit all evening or books RM1 for the day. src/Api.js:1030-1034
+ *    would refuse it — with the same INVALID a dead token gives — so it is
+ *    stopped here, where the reason can be said.
+ */
+function kdSalesAmount(raw){
+  var s=String(raw==null?"":raw).trim();
+  if(s===""){ return null; }
+  if(!/^[0-9]+(\.[0-9]{1,2})?$/.test(s)){ return null; }
+  var n=Number(s);
+  return (isFinite(n) && n>=0) ? n : null;
+}
+
+async function confirmUpdate(){
+  var el=document.getElementById("umInput");
+  var val=kdSalesAmount(el.value);
+  if(val===null){
+    showToast("Digits only — e.g. 1200 or 1200.50. No RM, no commas, no spaces.","err",6000);
+    el.focus(); el.select();
+    return;
+  }
+
+  var btn=document.querySelector("#updateModalBg .um-confirm");
+  if(btn){ btn.disabled=true; }
+  showToast("Saving…","info");
+
+  var res=await kdSend({action:"updateSales", daily_sales:val});
+  if(btn){ btn.disabled=false; }
+
+  if(res.verdict==="sales_cell"){
+    // ★ The one structured refusal besides CONFIRM_REQUIRED (src/Api.js:474,
+    //   :2524). It names the sheet row, which is the only thing the owner can
+    //   act on — so it is shown, not folded into a generic failure.
+    showToast("SALES row "+res.data.row+" has a cell that is not a number ("+
+              (res.data.value||"")+"). Ask the owner to make that cell a plain number, then try again.","err",9000);
+    return;
+  }
+  if(res.verdict!=="ok"){ kdFail(res,"Updating today's sales"); return; }
+
+  closeUpdateModal();
+  // ★ The commission comes back from the same write that caused it
+  //   (src/Api.js:1162-1163). Nothing is recomputed here.
+  showToast("Saved ✓  Today RM "+res.data.daily_sales.toLocaleString()+
+            " · Season RM "+res.data.total_sales.toLocaleString()+
+            " · Commission RM "+res.data.commission,"ok",6000);
+  fetchSheets(true);
+}
+document.addEventListener("DOMContentLoaded",function(){
+  document.getElementById("umInput").addEventListener("keydown",function(e){if(e.key==="Enter")confirmUpdate();if(e.key==="Escape")closeUpdateModal();});
+});
+
+// ── Camera ─────────────────────────────────────────────────
+// ── Quick Action Modal ─────────────────────────────────────
+var actionType = null, actionCamStream = null;
+var actionProducts = []; // populated from lastData
+
+function openActionModal(type, prefilledStaff){
+  actionType = type;
+  var typeClass = type.toLowerCase();
+  document.getElementById("actionModalTitle").textContent = type;
+  var typeEl = document.getElementById("actionModalType");
+  typeEl.textContent = type.toUpperCase();
+  typeEl.className = "action-modal-type " + typeClass;
+
+  // Populate employee dropdown, pre-select if staff passed in
+  var empSel = document.getElementById("actionEmp");
+  empSel.innerHTML = '<option value="">Select Employee</option>';
+  var staffToSelect = prefilledStaff || selectedStaff || null;
+  // ★ roster[], not employees[] — src/Api.js:2477 and :2704.
+  if(lastData && lastData.roster){
+    lastData.roster.forEach(function(r){
+      var o=document.createElement("option"); o.value=r.employee; o.textContent=r.employee;
+      if(r.employee===staffToSelect) o.selected=true;
+      empSel.appendChild(o);
+    });
+  }
+  // Hide employee row if staff pre-filled
+  var empField = empSel.closest(".action-field");
+  if(empField) empField.style.display = staffToSelect ? "none" : "flex";
+  // Show staff badge
+  var badge = document.getElementById("actionStaffBadge");
+  var badgeName = document.getElementById("actionStaffName");
+  if(badge && badgeName){
+    if(staffToSelect){ badge.style.display="flex"; badgeName.textContent=staffToSelect; }
+    else { badge.style.display="none"; }
+  }
+
+  // Populate product dropdown
+  // ★★ R9②. getDashboard carries no product list (src/Api.js:2446-2478). The
+  //    product list is getStock's items[], which is PAR's own list — the same
+  //    list submitStock refuses anything outside of (KD-018).
+  var skuSel = document.getElementById("actionSku");
+  skuSel.innerHTML = '<option value="">Select Product</option>';
+  actionProducts = (stockData && stockData.items) ? stockData.items : [];
+  actionProducts.forEach(function(p){
+    var o=document.createElement("option"); o.value=p.sku;
+    o.textContent=p.sku+" · "+p.name; skuSel.appendChild(o);
+  });
+  if(!actionProducts.length){
+    // ★ Fetch it once, then refill. Not silent: an empty dropdown with no
+    //   explanation reads as "this shop sells nothing".
+    kdSend({action:"getStock"}).then(function(res){
+      if(res.verdict!=="ok"){ kdFail(res,"Loading the product list"); return; }
+      stockData=res.data;
+      actionProducts=res.data.items||[];
+      actionProducts.forEach(function(p){
+        var o=document.createElement("option"); o.value=p.sku;
+        o.textContent=p.sku+" · "+p.name; skuSel.appendChild(o);
+      });
+      validateActionForm();
+    });
+  }
+
+  // Remarks: required for FOC and Faulty, optional for Sample
+  var rmField = document.getElementById("actionRemarksField");
+  var rmLabel = document.getElementById("actionRemarksLabel");
+  var rmInput = document.getElementById("actionRemarks");
+  rmInput.value = "";
+  if(type === "Sample"){
+    rmLabel.innerHTML = "REMARKS <span style='color:var(--muted);font-size:10px'>(optional)</span>";
+    rmField.style.display = "flex";
+  } else {
+    rmLabel.innerHTML = "REMARKS <span style='color:var(--red)'>*</span>";
+    rmField.style.display = "flex";
+  }
+
+  // Camera: only for Faulty (ceremonial)
+  var camWrap = document.getElementById("actionCamWrap");
+  if(type === "Faulty"){
+    camWrap.style.display = "block";
+    startActionCam();
+  } else {
+    camWrap.style.display = "none";
+    stopActionCam();
+  }
+
+  document.getElementById("actionQty").value = 1;
+  document.getElementById("actionModalBg").classList.add("open");
+  validateActionForm();
+}
+
+function closeActionModal(){
+  document.getElementById("actionModalBg").classList.remove("open");
+  stopActionCam(); actionType = null;
+}
+
+function startActionCam(){
+  if(actionCamStream) return;
+  navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
+    .then(function(stream){
+      actionCamStream = stream;
+      var v=document.getElementById("actionVideo");
+      v.srcObject=stream;
+      document.getElementById("actionCamPlaceholder").style.display="none";
+      document.getElementById("actionCamRec").style.display="block";
+    }).catch(function(){ document.getElementById("actionCamPlaceholder").textContent="🚫"; });
+}
+
+function stopActionCam(){
+  if(!actionCamStream) return;
+  actionCamStream.getTracks().forEach(function(t){t.stop();}); actionCamStream=null;
+  var v=document.getElementById("actionVideo"); if(v) v.srcObject=null;
+  var rec=document.getElementById("actionCamRec"); if(rec) rec.style.display="none";
+  var ph=document.getElementById("actionCamPlaceholder"); if(ph){ph.style.display="";ph.textContent="📷";}
+}
+
+function validateActionForm(){
+  var emp = document.getElementById("actionEmp").value;
+  var sku = document.getElementById("actionSku").value;
+  var qty = parseFloat(document.getElementById("actionQty").value)||0;
+  var rmk = document.getElementById("actionRemarks").value.trim();
+  var needRmk = (actionType === "FOC" || actionType === "Faulty");
+  var ok = emp && sku && qty > 0 && (!needRmk || rmk);
+  document.getElementById("actionSubmitBtn").disabled = !ok;
+}
+// Attach live validation
+document.addEventListener("DOMContentLoaded", function(){
+  ["actionEmp","actionSku","actionQty","actionRemarks"].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.addEventListener("input", validateActionForm);
+  });
+});
+
+// ★ The only four the server canonicalises (src/Api.js:110, :726). Anything
+//   else is refused with the same INVALID a dead token gives, so it is stopped
+//   here where the reason can be said (R10).
+var KD_ACTION_TYPES = ["FOC","Sample","Faulty","Transfer"];
+
+async function submitAction(){
+  var emp = document.getElementById("actionEmp").value;
+  var sku = document.getElementById("actionSku").value;
+  var qtyRaw = document.getElementById("actionQty").value;
+  var rmk = document.getElementById("actionRemarks").value.trim();
+
+  if(KD_ACTION_TYPES.indexOf(actionType)===-1){
+    showToast("Bad action type — only FOC / Sample / Faulty / Transfer","err"); return;
+  }
+  if(!emp){ showToast("Select an employee first","err"); return; }
+  if(!sku){ showToast("Select a product first","err"); return; }
+
+  // ★ quantity must be a number greater than 0 (src/Api.js:744-748). No `||0`
+  //   anywhere near it — that idiom turns a typo into a valid-looking zero row.
+  var qty=Number(String(qtyRaw).trim());
+  if(!isFinite(qty) || qty<=0){
+    showToast("Quantity must be a number greater than 0","err"); document.getElementById("actionQty").focus(); return;
+  }
+  if((actionType==="FOC"||actionType==="Faulty")&&!rmk){
+    showToast("Remarks required for "+actionType,"err"); return;
+  }
+
+  if(actionType==="Faulty"){
+    var fl=document.getElementById("flash"); fl.classList.add("on"); setTimeout(function(){fl.classList.remove("on");},110);
+  }
+
+  var btn=document.getElementById("actionSubmitBtn");
+  btn.disabled=true; btn.textContent="Saving…";
+
+  var res=await kdSend({action:"submitAction", employee:emp, action_type:actionType,
+                        sku:sku, quantity:qty, remarks:rmk});
+  btn.disabled=false; btn.textContent="Submit";
+
+  if(res.verdict!=="ok"){ kdFail(res,actionType+" submit"); return; }
+
+  // ★ R8: no feed entry. getDashboard has no source for these, and a local-only
+  //   line would vanish at the next sync — worse than never showing it.
+  showToast(actionType+" recorded: "+sku+" × "+qty,"ok");
+  closeActionModal();
+  stockData=null;
+  if(document.getElementById("tab-stock").classList.contains("active")) loadStockTab();
+}
+
+// ── Punch Modal ────────────────────────────────────────────
+var punchEmp = null, punchType = null, punchStream = null;
+
+var CELEB_MESSAGES = {
+  "morning": {
+    emoji: "🌅",
+    title: "Morning Setup Complete! ✅",
+    msg: "Let's have a great day ahead! 💪\n今天也要加油！✨"
+  },
+  "closing": {
+    emoji: "🌙",
+    title: "Closing Complete! ✅",
+    msg: "Thank you for your hard work today! 🙏\n辛苦了，謝謝你的付出！"
+  },
+  "all_done": {
+    emoji: "🏆",
+    title: "All Tasks Done! 🎉",
+    msg: "All tasks done! RM1 bonus unlocked! 🎉\n全部完成！RM1 bonus 到手！"
+  }
+};
+
+
+function openPunchModal(name){
+  punchEmp = name; punchType = null;
+  document.getElementById("punchEmpName").textContent = name;
+  document.getElementById("punchStatus").style.display = "none";
+
+  // Auto-determine IN or OUT based on last punch for this employee today
+  // Cutoff: before 05:00 = treat as previous day's session
+  var now = new Date();
+  var cutoff = new Date(now); cutoff.setHours(5,0,0,0);
+  var refDate = now < cutoff
+    ? new Date(now.getFullYear(), now.getMonth(), now.getDate()-1)
+    : now;
+  var refStr = refDate.toLocaleDateString("en-MY");
+
+  var lastPunch = null;
+
+  // ★★ ONE SOURCE, AND IT IS THE SERVER'S. punchState is filled from roster[]
+  //    (src/Api.js:2477), which apiClockRosterState_ builds with the same three
+  //    readers submitClock uses (src/Api.js:2678-2681) — so whoever this page
+  //    thinks is on shift is whoever the server will say is on shift (KW-023).
+  //    The two fallbacks that used to sit here (activity_feed, then a
+  //    localStorage copy) are gone with their sources.
+  if(punchState[name]) { lastPunch = punchState[name]; }
+
+  // If last punch was IN → default OUT, else → default IN
+  var autoType = (!lastPunch || lastPunch==="OUT") ? "IN" : "OUT";
+  punchType = autoType;
+  // Store lastPunch globally so punchSelect can access for warning
+  // null means no history = treat as OUT (so IN is correct, OUT gets warning)
+  window._lastPunchForEmp = lastPunch || "OUT";
+
+  // Default to auto-detected type, both buttons still clickable
+  document.getElementById("punchActionRow").style.display = "flex";
+  punchType = autoType;
+  setPunchButtonState(autoType);
+
+  document.getElementById("captureBtn").style.display = "block";
+  startPunchCam();
+  document.getElementById("punchModalBg").classList.add("open");
+}
+function closePunchModal(){
+  document.getElementById("punchModalBg").classList.remove("open");
+  stopPunchCam();
+  punchEmp = null; punchType = null;
+  var w=document.getElementById("punchWarn"); if(w) w.style.display="none";
+}
+function punchSelect(type){
+  if(window._lastPunchForEmp && type === window._lastPunchForEmp){
+    var w=document.getElementById("punchWarn");
+    if(w){ w.textContent="⚠️ Last record was also "+type+" — double check!"; w.style.display="block"; }
+  } else {
+    var w=document.getElementById("punchWarn");
+    if(w) w.style.display="none";
+  }
+  applyPunchSelect(type);
+}
+
+function setPunchButtonState(activeType){
+  var inBtn  = document.getElementById("punchBtnIn")  || document.querySelector(".punch-btn-in");
+  var outBtn = document.getElementById("punchBtnOut") || document.querySelector(".punch-btn-out");
+  if(!inBtn || !outBtn) return;
+  if(activeType==="IN"){
+    inBtn.style.opacity="1";   inBtn.style.filter="";
+    outBtn.style.opacity="0.3"; outBtn.style.filter="grayscale(1)";
+  } else {
+    outBtn.style.opacity="1";  outBtn.style.filter="";
+    inBtn.style.opacity="0.3";  inBtn.style.filter="grayscale(1)";
+  }
+}
+
+function applyPunchSelect(type){
+  punchType = type;
+  setPunchButtonState(type);
+}
+
+
+function startPunchCam(){
+  if(punchStream) return;
+  var v = document.getElementById("punchVideo");
+  navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}})
+    .then(function(stream){
+      punchStream = stream; v.srcObject = stream;
+      document.getElementById("punchCamIdle").style.display = "none";
+      document.getElementById("punchCamRec").style.display = "block";
+    })
+    .catch(function(){ document.getElementById("punchCamIdle").innerHTML = '<div class="punch-cam-idle-icon">🚫</div>'; });
+}
+function stopPunchCam(){
+  if(!punchStream) return;
+  punchStream.getTracks().forEach(function(t){t.stop();}); punchStream = null;
+  var v = document.getElementById("punchVideo"); v.srcObject = null;
+  document.getElementById("punchCamIdle").style.display = "flex";
+  document.getElementById("punchCamIdle").innerHTML = '<div class="punch-cam-idle-icon">📷</div>';
+  document.getElementById("punchCamRec").style.display = "none";
+}
+/**
+ * ★★ THE DAY AND THE TIME ARE NO LONGER COMPUTED HERE. legacy posted
+ *    {name,type,date,time} with both halves off the tablet's own clock
+ *    (legacy/raya2026/index.html:1652-1653) and relied on doPost falling
+ *    through to a handler that recognised the shape. The action is now named,
+ *    the token is attached, and `date`/`time` are NOT SENT: src/Api.js:2087-2090
+ *    ignores them and :2154-2155 stamps the server's own, because KD-010 pays
+ *    RM5 to everybody who was there THAT DAY — a tablet with a wrong clock does
+ *    not make a cosmetic error, it pays the wrong people.
+ */
+async function doCapture(){
+  var btn=document.getElementById("captureBtn");
+  if(btn) btn.disabled=true;
+
+  var fl = document.getElementById("flash"); fl.classList.add("on"); setTimeout(function(){fl.classList.remove("on");},110);
+  var v=document.getElementById("punchVideo"), c=document.getElementById("punchCanvas");
+  if(punchStream && v.readyState>=2){
+    c.width=v.videoWidth; c.height=v.videoHeight;
+    var ctx=c.getContext("2d"); ctx.translate(c.width,0); ctx.scale(-1,1); ctx.drawImage(v,0,0);
+  }
+  stopPunchCam();
+
+  var emp=punchEmp, type=punchType;
+  var res=await kdSend({action:"submitClock", employee:emp, type:type});
+  if(btn) btn.disabled=false;
+
+  if(res.verdict!=="ok"){
+    kdFail(res,"Clock "+(type==="IN"?"in":"out"));
+    return;
+  }
+
+  if(btn) btn.style.display="none";
+  var st = document.getElementById("punchStatus");
+  // ★ The time shown is the SERVER's, straight out of the reply (src/Api.js:2207).
+  st.textContent = (res.data.type==="IN" ? "✅ Clocked In: " : "✅ Clocked Out: ")
+                 + res.data.employee + " · " + res.data.time;
+  st.className = "punch-status ok"; st.style.display = "block";
+
+  // ★ submitClock answers with the whole roster in the same shape getDashboard
+  //   uses (src/Api.js:2208) — the same three readers, so the feed and the punch
+  //   states cannot disagree (KW-023).
+  if(res.data.roster){
+    renderFeed(res.data.roster);
+    punchState={};
+    res.data.roster.forEach(function(r){ if(r.type) punchState[r.employee]=r.type; });
+    if(lastData) lastData.roster=res.data.roster;
+  }
+  setTimeout(function(){ closePunchModal(); }, 1500);
+}
+
+// ── Clock action (legacy doAction kept for safety) ─────────
+function doAction(type){ if(punchEmp) doCapture(); }
+// ── Attendance panel ───────────────────────────────────────
+//
+// ★★ R8. THIS SHOWS CLOCK IN / OUT AND NOTHING ELSE, because that is all the
+//    backend can answer. getDashboard's fields (src/Api.js:2446-2478) contain no
+//    activity feed; roster[] carries { employee, type, time } and stops there.
+//    FOC / Sample / Faulty / Transfer entries are GONE rather than faked
+//    locally — a line that disappears at the next 5-minute sync is worse than a
+//    line that was never drawn, and those actions now say so with a toast at the
+//    moment they succeed.
+// ★ No localStorage anywhere in here. The old copy existed to survive a reload;
+//   the roster is re-read on every sync and on every punch, so it has nothing
+//   left to add and one more place to disagree from.
+
+function renderFeed(roster){
+  var f=document.getElementById("feedScroll");
+  if(!f) return;
+  f.innerHTML="";
+
+  var live=(roster||[]).filter(function(r){ return r.type==="IN"||r.type==="OUT"; });
+  if(!live.length){
+    f.innerHTML='<div style="font-size:11px;color:var(--muted)">Nobody has clocked in yet today</div>';
+    return;
+  }
+
+  live.slice().sort(function(a,b){
+    var ta=parseInt(String(a.time||"00:00").replace(":",""),10)||0;
+    var tb=parseInt(String(b.time||"00:00").replace(":",""),10)||0;
+    return tb-ta;
+  }).forEach(function(r){
+    var el=document.createElement("div"); el.className="feed-item";
+    el.innerHTML='<div class="fdot '+(r.type==="IN"?"fdot-in":"fdot-out")+'"></div>'
+      +'<span class="fname" style="font-weight:600">'+r.employee+'</span>'
+      +'<span class="ftype" style="font-weight:400;font-size:12px;color:var(--muted)">'+r.type+'</span>'
+      +'<span class="ftime">'+(r.time||"—")+'</span>';
+    f.appendChild(el);
+  });
+}
+
+/** ★ Kept only so the midnight sweep below has something to call. */
+function getTodayKey(){ return "feed_"+new Date().toLocaleDateString("en-MY"); }
+
+function initFeed(){
+  renderFeed((lastData&&lastData.roster)||[]);
+  // ★ Behaviour unchanged (T3(e)): same 30 s period, same localStorage sweep of
+  //   the keys older builds left behind. Only the handle is new, so logout can
+  //   stop it.
+  feedTimer=setInterval(function(){
+    var key=getTodayKey();
+    try{
+      Object.keys(localStorage).filter(function(k){return k.indexOf("feed_")===0;})
+        .forEach(function(k){ if(k!==key) localStorage.removeItem(k); });
+    }catch(e){}
+    var f=document.getElementById("feedScroll");
+    if(f) f.dataset.date=key;
+  },30000);
+}
+
+// ── Toast ──────────────────────────────────────────────────
+function showToast(msg,type,duration){
+  var t=document.getElementById("toast"); t.textContent=msg; t.className="toast "+(type||"info");
+  void t.offsetWidth; t.classList.add("show");
+  setTimeout(function(){t.classList.remove("show");},(duration||(type==="err"?5000:2500)));
+}
+
+// ── Daily Tasks System ─────────────────────────────────────
+var DAILY_TASKS = [
+  { id:"morning",    icon:"🌅", label:"Morning Setup",   time:"9am–10am",   reward:1,
+    photos:[{label:"Kiosk View 1 — Neat & Ready"},{label:"Kiosk View 2 — Neat & Ready"},{label:"Packing Area — Clean & Tidy"},{label:"Sample Tray — Ready to Serve"}] },
+  { id:"midday",     icon:"☀️", label:"Midday Check",    time:"2pm–3pm",    reward:1,
+    photos:[{label:"Kiosk View 1 — Still Neat"},{label:"Kiosk View 2 — Still Neat"},{label:"Packing Area — Clean & Tidy"},{label:"Sample Area — Clean & Tidy"}] },
+  { id:"closing",    icon:"🌙", label:"Closing Cleanup", time:"9.30pm–10.30pm", reward:1,
+    photos:[{label:"Kiosk View 1 — Cleared"},{label:"Kiosk View 2 — Cleared"},{label:"Rubbish Bin — Emptied & Cleaned"},{label:"Utensils — Cleaned & Stored"},{label:"Sample Trays — Cleaned"},{label:"Store — Closed & Secured"}] },
+  { id:"stockcount", icon:"📦", label:"Stock Count",     time:"",           reward:1, photos:[] }
+];
+
+var tasksDone    = {};
+var lastTaskDate = new Date().toDateString();
+
+function loadTaskState(){
+  // tasksDone rebuilt from Sheets on every sync — no localStorage read
+}
+function saveTaskState(){
+  // tasksDone is in-memory only; Sheets (DAILY_TASK tab) is source of truth
+}
+
+function renderDailyTasks(){
+  var list=document.getElementById("dailyTaskList"); if(!list) return;
+  list.innerHTML="";
+  // ★ R9: nothing is totalled here. The two figures on this panel are
+  //   task_reward_today and task_reward_season, written by renderDash straight
+  //   from the server (src/Api.js:2474-2475).
+  DAILY_TASKS.forEach(function(task,i){
+    var done=!!tasksDone[task.id];
+    var div=document.createElement("div");
+    div.className="daily-task-item tc-"+i+(done?" done":"");
+    div.innerHTML='<div class="task-check">'+(done?"✓":"")+'</div>'
+      +'<span class="task-text"><span style="margin-right:4px">'+task.icon+'</span>'+task.label
+      +(task.time?'<span style="font-size:10px;color:var(--muted);margin-left:5px;font-family:DM Mono,monospace;">'+task.time+'</span>':"")+'</span>'
+      +'<span style="margin-left:auto;font-size:10px;font-family:DM Mono,monospace;flex-shrink:0;opacity:.7">RM'+task.reward+'</span>';
+    if(!done) div.onclick=function(){ openTaskModal(task.id); };
+    list.appendChild(div);
+  });
+  // ★ Straight off what the server says is done today (renderDash fills
+  //   tasksDone from d.tasks[]), not off a local tally.
+  var allComplete = DAILY_TASKS.every(function(t){ return !!tasksDone[t.id]; });
+  // ★★ P6. DISPLAY ONLY. It has no onclick and never had a handler of its own —
+  //    the RM1 is the server's own all-four bonus (src/Api.js:142, KD-010) and
+  //    the write that used to be fired from here was deleted in R9①, because
+  //    `all_done_bonus` is not an id apiFindDailyTask_ knows. Ticking it is
+  //    decided by `allComplete` above, which is the server's tasks[] and not a
+  //    local tally.
+  var bonusDiv = document.createElement("div");
+  bonusDiv.className = "daily-task-item tc-5" + (allComplete ? " done" : "");
+  bonusDiv.style.borderStyle = "dashed";
+  bonusDiv.style.cursor = "default";
+  bonusDiv.innerHTML = '<div class="task-check">'+(allComplete?"✓":"")+'</div>'
+    +'<span class="task-text">🏆 Complete all tasks</span>'
+    +'<span style="margin-left:auto;font-size:10px;font-family:DM Mono,monospace;flex-shrink:0;opacity:.7">RM1</span>';
+  list.appendChild(bonusDiv);
+  // Today Earned shown in task-earn-chip, updated via renderDash
+}
+
+// ── Task Modal ──────────────────────────────────────────────
+var currentTaskId=null, taskPhotos={}, taskStream=null;
+
+function openTaskModal(taskId){
+  var task=DAILY_TASKS.find(function(t){return t.id===taskId;}); if(!task) return;
+  currentTaskId=taskId; taskPhotos={};
+
+  if(taskId==="stockcount"){
+    if(tasksDone["stockcount"]){
+      showToast("Stock Count already done ✓","ok");
+    } else {
+      showToast("Go to Stock Count tab and submit — task auto-completes","err",4000);
+    }
+    return;
+  }
+
+  document.getElementById("taskModalIcon").textContent=task.icon;
+  document.getElementById("taskModalTitle").textContent=task.label;
+  document.getElementById("taskModalReward").textContent=task.reward;
+  document.getElementById("taskStatus").style.display="none";
+  document.getElementById("taskSubmitBtn").disabled=true;
+  document.getElementById("taskSubmitBtn").textContent="Submit Task";
+  checkTaskReady();
+
+
+
+  var grid=document.getElementById("taskPhotoGrid");
+  var n=task.photos.length;
+  grid.className="task-photo-grid "+(n<=3?"grid-"+n:(n===6?"grid-6":"grid-4"));
+  grid.innerHTML="";
+  task.photos.forEach(function(p,idx){
+    var slot=document.createElement("div"); slot.className="task-photo-slot"; slot.id="taskSlot_"+idx;
+    slot.innerHTML='<div class="slot-placeholder"><div class="slot-icon">📷</div><div class="slot-label">'+p.label+'</div></div>';
+    slot.onclick=function(){ captureTaskPhoto(idx); };
+    grid.appendChild(slot);
+  });
+
+  // Ensure grid is visible (in case previous session left camera open)
+  showTaskGrid();
+  document.getElementById("taskModalBg").classList.add("open");
+}
+
+function confirmStockSubmit(){
+  // ★ A fresh submit is never a confirmed overwrite. Consent belongs to one
+  //   answer to one question, not to a mode the page sits in.
+  stockOverwriteConsent=false;
+  kdStockConfirmText("Ready to submit?",
+    "Make sure all FOC / Sample / Faulty / Transfer actions are recorded before submitting.",
+    "请确保所有 FOC / Sample / Faulty / Transfer 已记录后才提交。");
+  document.getElementById("stockConfirmBg").classList.add("open");
+}
+function closeStockConfirm(){
+  document.getElementById("stockConfirmBg").classList.remove("open");
+}
+/** ★ Cancel WITHDRAWS the consent; closeStockConfirm() alone must not, because
+ *  the Confirm button calls it on its way to submitStock(). */
+function cancelStockConfirm(){
+  stockOverwriteConsent=false;
+  closeStockConfirm();
+}
+
+function closeTaskModal(){
+  document.getElementById("taskModalBg").classList.remove("open");
+  stopTaskCam(); currentTaskId=null; taskPhotos={};
+  // Reset modal state
+  document.getElementById("taskStatus").style.display="none";
+  var pg=document.getElementById("taskPhotoGrid"); if(pg) pg.style.display="";
+  var sb=document.getElementById("taskSubmitBtn"); if(sb) sb.style.display="";
+}
+
+function checkTaskReady(){
+  var task=DAILY_TASKS.find(function(t){return t.id===currentTaskId;}); if(!task) return;
+  var allShot=task.photos.every(function(_,i){return !!taskPhotos[i];});
+  // ★★ Q2. THE PHOTOS ARE THE ONLY CONDITION. No name is asked for anywhere on
+  //    this path — see submitTask().
+  var btn=document.getElementById("taskSubmitBtn");
+  btn.disabled=!allShot;
+  // ★ Says WHY it is disabled. A dead button with no reason is the thing that
+  //   gets tapped five times.
+  var hint=document.getElementById("taskPhotoHint");
+  if(hint){
+    hint.textContent = allShot ? "Ready to submit" : "Tap each slot to take photo";
+  }
+}
+
+var currentCaptureSlot = null;
+
+function captureTaskPhoto(slotIdx){
+  currentCaptureSlot = slotIdx;
+  var v   = document.getElementById("taskVideo");
+  var ovl = document.getElementById("taskCamOverlay");
+  var hint = document.getElementById("taskPhotoHint");
+  var task = DAILY_TASKS.find(function(t){return t.id===currentTaskId;});
+  var slotLabel = task && task.photos[slotIdx] ? task.photos[slotIdx].label : "Photo "+(slotIdx+1);
+
+  // Update slot label in viewfinder
+  var labelEl = ovl.querySelector("span");
+  if(labelEl) labelEl.textContent = slotLabel;
+
+  function tryCamera(constraints){
+    navigator.mediaDevices.getUserMedia(constraints)
+      .then(function(stream){
+        taskStream = stream;
+        v.srcObject = stream;
+        v.onloadedmetadata = function(){ v.play(); };
+        // Show viewfinder, hide photo grid & hint
+        if(ovl){ ovl.style.display = "flex"; }
+        if(hint){ hint.style.display = "none"; }
+        document.getElementById("taskPhotoGrid").style.display = "none";
+        document.getElementById("taskSubmitBtn").style.display = "none";
+      })
+      .catch(function(err){
+        console.warn("Camera error:", err.name, err.message);
+        if(constraints.video && constraints.video.facingMode){
+          tryCamera({video:true, audio:false}); // fallback: any camera
+        } else {
+          taskPhotos[slotIdx]="no-cam"; updateSlotDone(slotIdx,null); checkTaskReady();
+        }
+      });
+  }
+  tryCamera({video:{facingMode:"environment"}, audio:false});
+}
+
+function cancelTaskCam(){
+  stopTaskCam();
+  showTaskGrid();
+}
+
+function showTaskGrid(){
+  var ovl  = document.getElementById("taskCamOverlay");
+  var hint = document.getElementById("taskPhotoHint");
+  if(ovl)  ovl.style.display  = "none";
+  if(hint) hint.style.display = "block";
+  document.getElementById("taskPhotoGrid").style.display = "";
+  document.getElementById("taskSubmitBtn").style.display = "";
+}
+
+function doTaskCapture(){
+  var slotIdx = currentCaptureSlot;
+  var v = document.getElementById("taskVideo");
+  var c = document.getElementById("taskCanvas");
+  var w = v.videoWidth  || 640;
+  var h = v.videoHeight || 480;
+  var maxW = 800;
+  if(w > maxW){ h = Math.round(h * maxW/w); w = maxW; }
+  c.width=w; c.height=h;
+  c.getContext("2d").drawImage(v,0,0,w,h);
+  var dataUrl = c.toDataURL("image/jpeg", 0.55);
+  taskPhotos[slotIdx] = dataUrl;
+  stopTaskCam();
+  showTaskGrid();
+  updateSlotDone(slotIdx, dataUrl);
+  checkTaskReady();
+  var fl=document.getElementById("flash"); if(fl){fl.classList.add("on");setTimeout(function(){fl.classList.remove("on");},110);}
+}
+
+function updateSlotDone(slotIdx,dataUrl){
+  var slot=document.getElementById("taskSlot_"+slotIdx); if(!slot) return;
+  slot.classList.add("done");
+  if(dataUrl&&dataUrl!=="no-cam"){
+    var img=document.createElement("img"); img.src=dataUrl; slot.appendChild(img);
+  } else {
+    slot.innerHTML='<div style="font-size:22px;line-height:1">✓</div>';
+  }
+}
+
+function stopTaskCam(){
+  if(!taskStream) return;
+  taskStream.getTracks().forEach(function(t){t.stop();}); taskStream=null;
+  var v=document.getElementById("taskVideo"); if(v){ v.srcObject=null; v.onloadedmetadata=null; v.onplaying=null; }
+}
+
+var CELEBS = {
+  "morning": {
+    emoji: "🌅",
+    title: "Morning Setup Complete! ✅",
+    msg: "Let's have a great day ahead! 💪\n今天也要加油！✨"
+  },
+  "midday": {
+    emoji: "☀️",
+    title: "Midday Check Done! ✅",
+    msg: "Keep it up, you're doing great! 👍\n繼續加油，做得很好！💪"
+  },
+  "closing": {
+    emoji: "🌙",
+    title: "Closing Complete! ✅",
+    msg: "Thank you for your hard work today! 🙏\n辛苦了，謝謝你的付出！"
+  },
+  "all_done": {
+    emoji: "🏆",
+    title: "All Tasks Done! 🎉",
+    msg: "All tasks done! RM1 bonus unlocked! 🎉\n全部完成！RM1 bonus 到手！"
+  }
+};
+function showCelebration(key){
+  var data = CELEBS[key]; if(!data) return;
+  var modal = document.getElementById("taskCelebModal");
+  document.getElementById("celebEmoji").textContent = data.emoji;
+  document.getElementById("celebTitle").textContent = data.title;
+  document.getElementById("celebMsg").textContent = data.msg;
+  modal.style.display = "flex";
+  setTimeout(function(){ modal.style.display = "none"; }, 3500);
+}
+
+// ★★ THE LIMITS ARE THE SERVER'S, CHECKED HERE SO A REFUSAL IS EXPLAINED
+//    RATHER THAN SUFFERED. src/Api.js:365-367 and :1966: at most 8 photos,
+//    300KB each, 1536KB total — and 'no-cam' or '' is "not taken", which is not
+//    an error (src/Api.js:1986). A batch that breaks any of these comes back as
+//    the same INVALID a dead token gives, after the promoter has already stood
+//    there taking six pictures.
+var KD_PHOTO_MAX_COUNT=8, KD_PHOTO_MAX_BYTES=300*1024, KD_PHOTO_MAX_TOTAL=1536*1024;
+
+/** Rough decoded size of a base64 data URL, without decoding it. */
+function kdPhotoBytes(dataUrl){
+  var b64=String(dataUrl).replace(/^data:[^;,]*;base64,/,"");
+  var pad=(b64.slice(-2)==="==")?2:((b64.slice(-1)==="=")?1:0);
+  return Math.floor(b64.length*3/4)-pad;
+}
+
+/** Returns the photos to send, or null after saying what is wrong. */
+function kdTaskPhotos(task){
+  var out=[], total=0;
+  for(var i=0;i<task.photos.length;i++){
+    var data=taskPhotos[i];
+    if(!data || data==="no-cam"){ out.push({label:task.photos[i].label, data:"no-cam"}); continue; }
+    var bytes=kdPhotoBytes(data);
+    if(bytes>KD_PHOTO_MAX_BYTES){
+      showToast("\""+task.photos[i].label+"\" is too big ("+Math.round(bytes/1024)+
+                "KB, limit is 300KB). Please retake it.","err",8000);
+      return null;
+    }
+    total+=bytes;
+    out.push({label:task.photos[i].label, data:data});
+  }
+  var real=out.filter(function(p){ return p.data && p.data!=="no-cam"; });
+  if(real.length>KD_PHOTO_MAX_COUNT){
+    showToast("At most 8 photos at a time; this batch has "+real.length+".","err",8000); return null;
+  }
+  if(total>KD_PHOTO_MAX_TOTAL){
+    showToast("Photos total "+Math.round(total/1024)+"KB, over the 1536KB limit. Please retake some of them.","err",8000);
+    return null;
+  }
+  return out;
+}
+
+/**
+ * ★★ TWO WRITES, IN THIS ORDER, AND THE FIRST ONE IS THE ONE THAT PAYS.
+ *    updateTaskReward writes the DAILY_TASK row (src/Api.js:884-893) and answers
+ *    with the server's own reward for the day; uploadTaskPhotos only puts files
+ *    in Drive. If the photos fail, the task is still done and the money is
+ *    already recorded — so that failure is reported and does not undo anything.
+ * ★ No `all_done_bonus` write (R9①). No local totals anywhere.
+ */
+async function submitTask(){
+  var task=DAILY_TASKS.find(function(t){return t.id===currentTaskId;}); if(!task) return;
+
+  // ★★ Q2. THIS PATH ASKS FOR NOBODY'S NAME, DELIBERATELY. A daily task pays the
+  //    SHOP — KD-010 gives RM5 to everybody who was there that day — and
+  //    updateTaskReward takes token + task_id and nothing else
+  //    (src/Api.js:840-841). uploadTaskPhotos now names the Drive folder from
+  //    the session's own account (src/Api.js:1985), so there is nothing left for
+  //    this screen to collect. Asking "who did this?" would teach the promoters
+  //    that tasks are a personal scoreboard, which is attention taken off
+  //    selling. ★ `selectedStaff` is untouched and still belongs to FOC /
+  //    Sample / Faulty / Transfer and the clock — those DO name a person.
+  var photos=kdTaskPhotos(task);
+  if(photos===null) return;
+
+  var btn=document.getElementById("taskSubmitBtn");
+  btn.disabled=true; btn.textContent="Uploading…";
+
+  var rew=await kdSend({action:"updateTaskReward", task_id:task.id});
+  if(rew.verdict!=="ok"){
+    btn.disabled=false; btn.textContent="Submit Task";
+    kdFail(rew,"Recording the task \""+task.label+"\"");
+    return;
+  }
+
+  var done=rew.data.tasks||[];
+  var allDone=DAILY_TASKS.every(function(t){ return done.indexOf(t.id)!==-1; });
+
+  var hasPhotos=photos.some(function(p){ return p.data && p.data!=="no-cam"; });
+  if(hasPhotos){
+    btn.textContent="Uploading photos…";
+    // ★ No `employee`. The server names the folder from the session
+    //   (src/Api.js:1985) and would not read one if it were sent.
+    var up=await kdSend({action:"uploadTaskPhotos",
+                         task_id:task.id, photos:photos});
+    if(up.verdict!=="ok"){
+      // ★ The task IS recorded. Say exactly that, so nobody re-does it.
+      btn.disabled=false; btn.textContent="Submit Task";
+      showToast("The task IS recorded (reward RM"+rew.data.reward+"), but THE PHOTOS DID NOT UPLOAD. "+
+                "Retake them and submit again, or tell the owner.","err",9000);
+      renderDailyTasks(); fetchSheets(true);
+      return;
+    }
+  }
+
+  btn.disabled=false; btn.textContent="Submit Task";
+  showToast("✅ "+task.label+" done · today's task reward RM"+rew.data.reward,"ok",5000);
+  closeTaskModal();
+
+  var celebKey = allDone ? "all_done" : (CELEBS[task.id] ? task.id : null);
+  if(celebKey) showCelebration(celebKey);
+  fetchSheets(true);
+}
+
+taskDateTimer=setInterval(function(){
+  var today=new Date().toDateString();
+  if(today!==lastTaskDate){lastTaskDate=today;tasksDone={};saveTaskState();renderDailyTasks();}
+},30000);
+
+
+// Clear legacy localStorage on load
+try{Object.keys(localStorage).forEach(function(k){if(k.startsWith("feed_")||k.startsWith("tasks_"))localStorage.removeItem(k);});}catch(e){}
+
+// ★★ T4(a)/(b). legacy/raya2026/index.html:2103 ran this at parse time. It now
+//    runs when a session exists, and it can be stopped.
+function startDashboard(){
+  if (dashboardStarted) { return; }
+  dashboardStarted = true;
+  tick(); clockTimer=setInterval(tick,1000); startAutoSync(); loadTaskState();
+  renderDailyTasks(); updateActionBtns(); bindActionBtns(); initFeed();
+}
+
+function stopDashboard(){
+  clearInterval(clockTimer);    clockTimer=null;
+  clearInterval(syncTimer);     syncTimer=null;
+  clearInterval(feedTimer);     feedTimer=null;
+  clearInterval(taskDateTimer); taskDateTimer=null;
+  dashboardStarted = false;
+}
+</script>
