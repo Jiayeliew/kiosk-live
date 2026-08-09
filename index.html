@@ -352,6 +352,13 @@
   .um-actions{display:flex;gap:8px;}
   .um-confirm{flex:1;background:var(--green);border:none;border-radius:9px;height:46px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;color:#fff;cursor:pointer;}
   .um-confirm:hover{opacity:.85;}
+  /* ★ R11. The message a refused submit produces MUST live inside the modal.
+     showToast paints on the layer BELOW an open modal, so a failure that keeps
+     the modal open was writing its reason somewhere nobody could see it. */
+  .um-msg{display:none;margin-top:10px;padding:10px 12px;border-radius:9px;font-size:13px;line-height:1.5;text-align:left;}
+  .um-msg.show{display:block;}
+  .um-msg.err{background:#fff0f0;border:1.5px solid var(--red);color:var(--red);}
+  .um-msg.info{background:#f2f4f7;border:1.5px solid var(--muted);color:var(--text);}
   .um-cancel{background:var(--bg);border:1.5px solid var(--border2);border-radius:9px;height:46px;padding:0 18px;font-family:'DM Sans',sans-serif;font-size:15px;color:var(--muted);cursor:pointer;}
 
   .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
@@ -578,7 +585,7 @@
          shop can sit on last week's file for days and report "the new one is
          broken" — and a photo of the screen cannot tell the two apart. Written
          into the file at commit time; it costs no request. -->
-    <span class="build-tag" id="buildTag" title="build 90fd158 — the commit this file's code comes from">90fd158</span>
+    <span class="build-tag" id="buildTag" title="build eb93a01 — the commit this file's code comes from">eb93a01</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -757,8 +764,8 @@
       请确保所有 FOC / Sample / Faulty / Transfer 已记录后才提交。
     </div>
     <div style="display:flex;gap:10px;">
-      <button onclick="cancelStockConfirm()" style="flex:1;height:44px;background:#fff0f0;border:1.5px solid var(--red);border-radius:10px;font-size:14px;font-weight:600;color:var(--red);cursor:pointer;">✕ Cancel</button>
-      <button onclick="closeStockConfirm();submitStock();" style="flex:1;height:44px;background:var(--green);border:none;border-radius:10px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;">✓ Confirm Stock</button>
+      <button id="stockConfirmNo" onclick="kdConfirmCancel()" style="flex:1;height:44px;background:#fff0f0;border:1.5px solid var(--red);border-radius:10px;font-size:14px;font-weight:600;color:var(--red);cursor:pointer;">✕ Cancel</button>
+      <button id="stockConfirmYes" onclick="kdConfirmProceed()" style="flex:1;height:44px;background:var(--green);border:none;border-radius:10px;font-size:14px;font-weight:600;color:#fff;cursor:pointer;">✓ Confirm Stock</button>
     </div>
   </div>
 </div>
@@ -851,6 +858,10 @@
          the raw text is needed to tell the promoter which character to delete. -->
     <div class="um-input-wrap"><div class="um-prefix">RM</div><input class="um-input" id="umInput" type="text" placeholder="0" inputmode="decimal" autocomplete="off"></div>
     <div class="um-actions"><button class="um-confirm" onclick="confirmUpdate()">Confirm</button><button class="um-cancel" onclick="closeUpdateModal()">Cancel</button></div>
+    <!-- ★ R11. Below the buttons and inside the modal card. The input above it
+         keeps whatever was typed — a refusal must never cost the promoter the
+         number he just entered. -->
+    <div class="um-msg" id="umMsg"></div>
   </div>
 </div>
 
@@ -1203,14 +1214,33 @@
     });
   });
 
-  logoutBtn.addEventListener('click', function () {
+  /**
+   * ★★ R11. Logging out is now confirmed first. A promoter mid-count who
+   *    fat-fingers the topbar loses the screen and has to find the password
+   *    again — and five re-tries trip the throttle, which looks like a wrong
+   *    password (KB-038). Cancel is the default.
+   * ★★ The actual logging out is `window.endSession()` and NOTHING ELSE. This
+   *    handler used to carry its own copy of those three lines; two copies of
+   *    "how do we log somebody out" is exactly what KD-047 put endSession there
+   *    to prevent, and the copy is now gone rather than wrapped.
+   */
+  function doLogout() {
     // ★★ T4(b). Every timer dies BEFORE the token does. A live 5-minute sync
     //   after a logout is a request a minute from now with no token on it, an
     //   INVALID coming back, and no screen anywhere saying so.
     if (typeof window.stopDashboard === 'function') { window.stopDashboard(); }
-    clearToken();
-    say('', '', '');
-    showLoginView();
+    window.endSession();
+  }
+  logoutBtn.addEventListener('click', function () {
+    // ★ Fail-safe: if the dashboard half never loaded, log out without asking.
+    //   Nobody may ever be trapped inside a session by a missing dialog.
+    if (typeof window.kdConfirmAsk !== 'function') { doLogout(); return; }
+    window.kdConfirmAsk(
+      'Log out?',
+      'You will need the store password to get back in.',
+      '登出后要重新输入店铺密码才能进来。',
+      '✓ Log out',
+      doLogout);
   });
 
   /**
@@ -1957,6 +1987,7 @@ async function submitStock(){
       //   translation rather than a deliberate one.
       "此批中有商品由 "+(res.data.by||"?")+" 在 "+(res.data.at||"?")+" 盘点，确认后将用你的数字覆盖。");
     stockOverwriteConsent=true;
+    kdConfirmAction=null; kdConfirmRestore();   // ★ R11. This box belongs to stock again.
     document.getElementById("stockConfirmBg").classList.add("open");
     return;
   }
@@ -2056,10 +2087,18 @@ async function loadReorderTab(){
 function openUpdateModal(){
   var cur=(lastData&&lastData.daily_sales)?lastData.daily_sales:0;
   document.getElementById("umInput").value=cur||"";
+  umSay("");   // ★ R11. A message from the last attempt must not greet the next one.
   document.getElementById("updateModalBg").classList.add("open");
   setTimeout(function(){var el=document.getElementById("umInput");el.focus();el.select();},100);
 }
-function closeUpdateModal(){document.getElementById("updateModalBg").classList.remove("open");}
+function closeUpdateModal(){document.getElementById("updateModalBg").classList.remove("open");umSay("");}
+/** ★ R11. The in-modal message line. Empty text hides it. */
+function umSay(text,kind){
+  var el=document.getElementById("umMsg");
+  if(!el){ return; }
+  el.textContent=text||"";
+  el.className="um-msg"+(text?(" show "+(kind||"err")):"");
+}
 
 /**
  * ★★ R10. A NUMBER, AND NOTHING THAT MERELY LOOKS LIKE ONE. `type=number` plus
@@ -2081,14 +2120,14 @@ async function confirmUpdate(){
   var el=document.getElementById("umInput");
   var val=kdSalesAmount(el.value);
   if(val===null){
-    showToast("Digits only — e.g. 1200 or 1200.50. No RM, no commas, no spaces.","err",6000);
+    umSay("Digits only — e.g. 1200 or 1200.50. No RM, no commas, no spaces.","err");
     el.focus(); el.select();
     return;
   }
 
   var btn=document.querySelector("#updateModalBg .um-confirm");
   if(btn){ btn.disabled=true; }
-  showToast("Saving…","info");
+  umSay("Saving…","info");
 
   var res=await kdSend({action:"updateSales", daily_sales:val});
   if(btn){ btn.disabled=false; }
@@ -2097,8 +2136,18 @@ async function confirmUpdate(){
     // ★ The one structured refusal besides CONFIRM_REQUIRED (src/Api.js:474,
     //   :2524). It names the sheet row, which is the only thing the owner can
     //   act on — so it is shown, not folded into a generic failure.
-    showToast("SALES row "+res.data.row+" has a cell that is not a number ("+
-              (res.data.value||"")+"). Ask the owner to make that cell a plain number, then try again.","err",9000);
+    umSay("SALES row "+res.data.row+" has a cell that is not a number ("+
+          (res.data.value||"")+"). Ask the owner to make that cell a plain number, then try again.","err");
+    return;
+  }
+  // ★★ R11 / KW-040. 'rejected' means kdSend already asked `whoami` and the door
+  //    said the SESSION IS FINE — so it is THIS submission that was refused, and
+  //    the only correct thing to do is say so where the promoter is looking and
+  //    leave his number in the box. Nothing about the session is touched here.
+  //    ★ 'dead' / 'season_ended' / 'offline' are deliberately NOT caught: they
+  //    still go to kdFail, which is the one place that decides to end a session.
+  if(res.verdict==="rejected"){
+    umSay("Did not go through. Check the amount and try again. (Your session is fine — you are still logged in.)","err");
     return;
   }
   if(res.verdict!=="ok"){ kdFail(res,"Updating today's sales"); return; }
@@ -2632,6 +2681,7 @@ function confirmStockSubmit(){
   // ★ A fresh submit is never a confirmed overwrite. Consent belongs to one
   //   answer to one question, not to a mode the page sits in.
   stockOverwriteConsent=false;
+  kdConfirmAction=null; kdConfirmRestore();   // ★ R11. This box belongs to stock again.
   kdStockConfirmText("Ready to submit?",
     "Make sure all FOC / Sample / Faulty / Transfer actions are recorded before submitting.",
     "请确保所有 FOC / Sample / Faulty / Transfer 已记录后才提交。");
@@ -2645,6 +2695,46 @@ function closeStockConfirm(){
 function cancelStockConfirm(){
   stockOverwriteConsent=false;
   closeStockConfirm();
+}
+
+/* ══ R11. ONE confirm box, borrowed — not a second one ═══════════════════════
+ * The box at #stockConfirmBg is reused for log out. Rather than a second modal
+ * (two boxes drift apart, and the day they do the wrong one says the wrong
+ * thing), the two buttons now call these, and what "Confirm" means is one
+ * variable set immediately before the box is opened.
+ * ★★ null is the STOCK flow — the pre-existing behaviour, byte for byte. Any
+ *    borrower must set kdConfirmAction and must reset it, which both paths below
+ *    do FIRST, so a stale action can never be inherited by the next question. */
+var kdConfirmAction=null;
+var kdConfirmYesLabel="✓ Confirm Stock";
+
+function kdConfirmProceed(){
+  var act=kdConfirmAction; kdConfirmAction=null;
+  closeStockConfirm();
+  kdConfirmRestore();
+  if(act){ act(); return; }
+  submitStock();
+}
+function kdConfirmCancel(){
+  var act=kdConfirmAction; kdConfirmAction=null;
+  if(act){ closeStockConfirm(); kdConfirmRestore(); return; }
+  cancelStockConfirm();   // ★ the stock path also withdraws consent
+}
+function kdConfirmRestore(){
+  var yes=document.getElementById("stockConfirmYes");
+  if(yes){ yes.textContent=kdConfirmYesLabel; }
+}
+/** ★ Borrow the box. `onOk` runs only if the promoter presses the green button. */
+function kdConfirmAsk(title,body,sub,okLabel,onOk){
+  kdConfirmAction=onOk;
+  kdStockConfirmText(title,body,sub);
+  var yes=document.getElementById("stockConfirmYes");
+  if(yes){ yes.textContent=okLabel||"✓ Confirm"; }
+  document.getElementById("stockConfirmBg").classList.add("open");
+  // ★ Cancel is the default: it is the left button and it is the one that is
+  //   focused, so Enter and a stray tap both mean "no".
+  var no=document.getElementById("stockConfirmNo");
+  if(no){ setTimeout(function(){ no.focus(); },50); }
 }
 
 function closeTaskModal(){
