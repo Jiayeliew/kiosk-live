@@ -245,6 +245,13 @@
   .fdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
   .fdot-in{background:var(--green);} .fdot-out{background:var(--red);}
   .fdot-foc{background:var(--blue);} .fdot-sample{background:var(--gold);} .fdot-faulty{background:#f97316;} .fdot-neutral{background:var(--muted);}
+  /* ★ KB-056. Transfer had a button (.act-btn.transfer) and no dot, so a
+     transfer used to fall through to .fdot-neutral and look like nothing in
+     particular. #6c8ebf is that button's own blue, verbatim — one colour per
+     action, wherever the action appears. .fdot-task is new for the same reason:
+     a completed daily task is a fifth thing the feed now shows. */
+  .fdot-transfer{background:#6c8ebf;} .fdot-task{background:var(--green);}
+  .fdetail{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;flex-shrink:0;}
   .fname{font-weight:400;} .ftype{font-size:13px;color:var(--text);flex-shrink:0;font-weight:600;}
   .fdetail{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px;}
   .ftime{margin-left:auto;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);flex-shrink:0;}
@@ -591,7 +598,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 7d7d6b8 — the commit this file's code comes from">7d7d6b8</span>
+    <span class="build-tag" id="buildTag" title="build dev — unpublished copy; the published build carries its own hash">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -679,10 +686,11 @@
 
     <!-- Recent feed (next to staff+actions) -->
     <div class="feed-section">
-      <!-- ★ R8: says what it is. The backend has no source for FOC / Sample /
-           Faulty / Transfer entries, and a panel titled "Activity" that silently
-           shows only half of them reads as "the records are gone". -->
-      <div class="zone-label">Today's Clock In / Out</div>
+      <!-- ★ KB-056: the title says what it is, and it is all of it now.
+           getDashboard sends `activity_feed` — punches, FOC / Sample / Faulty /
+           Transfer and completed tasks — so "Activity" no longer means "half
+           the records, silently". R8's narrower title is retired with it. -->
+      <div class="zone-label">Today's Activity</div>
       <div class="feed-scroll" id="feedScroll"></div>
     </div>
 
@@ -1637,8 +1645,17 @@ function renderDash(d){
     }
   }
 
-  // ── Feed: clock only (R8) ──
-  renderFeed(d.roster||[]);
+  // ── Feed: everything that happened today (KB-056) ──
+  // ★★ activity_feed, NOT roster. roster[] is who is on shift now — one row per
+  //    person, last punch only. The feed is what happened — every punch, every
+  //    FOC / Sample / Faulty / Transfer and every completed task. Drawing the
+  //    roster in here was R8's stopgap while the backend had no feed to send.
+  // ★ `||[]` because a tablet still running against an older deployment gets no
+  //   such field, and the panel must say "nothing yet", not throw.
+  renderFeed(d.activity_feed||[]);
+  // ★ punchState stays on roster[]. It is a STATE — whose next button says IN
+  //   and whose says OUT — and the feed is a log; deriving the button from the
+  //   last line of a log would guess wrong the moment a line is missing.
   punchState={};
   (d.roster||[]).forEach(function(r){ if(r.type) punchState[r.employee]=r.type; });
 }
@@ -2525,10 +2542,17 @@ async function doCapture(){
   st.className = "punch-status ok"; st.style.display = "block";
 
   // ★ submitClock answers with the whole roster in the same shape getDashboard
-  //   uses (src/Api.js:2208) — the same three readers, so the feed and the punch
-  //   states cannot disagree (KW-023).
+  //   uses (src/Api.js:2208) — the same three readers, so the punch states here
+  //   and the ones the next sync brings cannot disagree (KW-023).
+  // ★★ AND IT DOES NOT REDRAW THE FEED (KB-056). submitClock's reply carries
+  //    `roster` and no `activity_feed`; passing the roster to renderFeed now
+  //    would hand it rows shaped { employee, type, time } where it expects
+  //    { type, name, detail, time } — every line would read "undefined", and
+  //    the day's actions and tasks would be wiped off the panel until the next
+  //    5-minute sync. The punch's own confirmation is `punchStatus` above,
+  //    which is untouched; the new line appears at the next sync, from the
+  //    server, like every other line.
   if(res.data.roster){
-    renderFeed(res.data.roster);
     punchState={};
     res.data.roster.forEach(function(r){ if(r.type) punchState[r.employee]=r.type; });
     if(lastData) lastData.roster=res.data.roster;
@@ -2540,38 +2564,102 @@ async function doCapture(){
 function doAction(type){ if(punchEmp) doCapture(); }
 // ── Attendance panel ───────────────────────────────────────
 //
-// ★★ R8. THIS SHOWS CLOCK IN / OUT AND NOTHING ELSE, because that is all the
-//    backend can answer. getDashboard's fields (src/Api.js:2446-2478) contain no
-//    activity feed; roster[] carries { employee, type, time } and stops there.
-//    FOC / Sample / Faulty / Transfer entries are GONE rather than faked
-//    locally — a line that disappears at the next 5-minute sync is worse than a
-//    line that was never drawn, and those actions now say so with a toast at the
-//    moment they succeed.
-// ★ No localStorage anywhere in here. The old copy existed to survive a reload;
-//   the roster is re-read on every sync and on every punch, so it has nothing
-//   left to add and one more place to disagree from.
+// ★★ KB-056. R8 IS OVER: getDashboard now answers with `activity_feed`
+//    (src/Api.js — apiDashboardFeed_), so the panel shows the punches AND the
+//    four stock actions AND the completed daily tasks again. R8 removed them
+//    because the backend had no source for them; it has one now.
+// ★★ IT DRAWS WHAT THE SERVER SENT AND NOTHING IT MADE UP. No local line is
+//    appended when an action succeeds, no localStorage copy, no merge with
+//    roster[]. A line this page invented is a line that vanishes at the next
+//    5-minute sync, which is worse than a line that was never drawn — the
+//    actions keep saying so with their existing toast, which is untouched.
+// ★ Already sorted, newest first, on one ruler (minutes since midnight, server
+//   side). This function does not re-sort: two sorters means two orders the
+//   first time one of them is tuned.
+// ★ Entries are { type, name, detail, time }. `type` is 'IN' / 'OUT', the
+//   ACTIONS row's own spelling, or 'task'.
 
-function renderFeed(roster){
+/** Which dot and which emoji each feed `type` gets. ★ Matched case-folded, so
+ *  an ACTIONS row spelled 'foc' draws the same as 'FOC'. ★ A type not listed
+ *  here still appears — grey dot, no emoji — rather than being dropped. */
+var FEED_STYLE = {
+  "in":       { dot:"fdot-in",       emoji:"" },
+  "out":      { dot:"fdot-out",      emoji:"" },
+  "foc":      { dot:"fdot-foc",      emoji:"🎁" },
+  "sample":   { dot:"fdot-sample",   emoji:"🍰" },
+  "faulty":   { dot:"fdot-faulty",   emoji:"⚠️" },
+  "transfer": { dot:"fdot-transfer", emoji:"📦" },
+  // ★★ NO EMOJI HERE, DELIBERATELY. A completed task carries the icon of the
+  //    task it is — 🌅 for the morning setup, 🌙 for the closing — and one ✅
+  //    for all four says less than the four icons already on the task cards.
+  //    feedTaskIcon() below looks it up; the dot class stays.
+  "task":     { dot:"fdot-task",     emoji:"" }
+};
+
+/**
+ * The icon for a completed daily task, matched on the label the server sent.
+ *
+ * ★★ DAILY_TASKS IS THE ONE THAT ALREADY EXISTS in this file — the same array
+ *    the task cards are drawn from. A second table of icons here would be a
+ *    second thing to update the day a fifth task is added, and the feed would
+ *    be the half that was forgotten. Legacy did exactly this lookup
+ *    (legacy/raya2026/index.html:1716-1717).
+ * ★ `name` is API_DAILY_TASKS' own label (src/Api.js — the task feed entry
+ *   carries the TABLE's label, never the sheet cell's), and the two tables
+ *   spell the four labels identically.
+ * ★ No match is '' and the line still draws (KB-056 M3). A label this page has
+ *   not heard of is a task the server knows about and this build does not —
+ *   showing it without a picture beats not showing it.
+ */
+function feedTaskIcon(name){
+  var t=DAILY_TASKS.filter(function(x){ return x.label===name; })[0];
+  return t?t.icon:"";
+}
+
+/** ★ The feed prints sheet cells — an employee name and a SKU — straight into
+ *  innerHTML. The old version did too, with roster names. Escaping it here
+ *  because a feed carries far more hand-typed text than a roster does. */
+function feedEscape(s){
+  return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+function renderFeed(items){
   var f=document.getElementById("feedScroll");
   if(!f) return;
   f.innerHTML="";
 
-  var live=(roster||[]).filter(function(r){ return r.type==="IN"||r.type==="OUT"; });
+  var live=items||[];
   if(!live.length){
-    f.innerHTML='<div style="font-size:11px;color:var(--muted)">Nobody has clocked in yet today</div>';
+    f.innerHTML='<div style="font-size:11px;color:var(--muted)">Nothing has happened yet today</div>';
     return;
   }
 
-  live.slice().sort(function(a,b){
-    var ta=parseInt(String(a.time||"00:00").replace(":",""),10)||0;
-    var tb=parseInt(String(b.time||"00:00").replace(":",""),10)||0;
-    return tb-ta;
-  }).forEach(function(r){
+  live.forEach(function(r){
+    var key=String(r.type||"").toLowerCase();
+    var style=FEED_STYLE[key]||{dot:"fdot-neutral",emoji:""};
+    // ★ The only type whose emoji is per-ROW rather than per-type: which task
+    //   it was decides the icon. The other six read theirs off FEED_STYLE and
+    //   are untouched.
+    var emoji=(key==="task")?feedTaskIcon(r.name):style.emoji;
+    // ★★ The word "task" is not printed, and only that one type skips it
+    //    (legacy/raya2026/index.html — typeHtml='' for tasks). The name already
+    //    reads "Morning Setup" with the morning icon beside it; "task" after it
+    //    is the row telling you what you can see. The other six keep their
+    //    .ftype exactly as it was — 'IN', 'FOC', 'Transfer' are not implied by
+    //    the employee's name and have to be said.
+    var typeHtml=(key==="task")?''
+      :'<span class="ftype" style="font-weight:400;font-size:12px;color:var(--muted)">'
+        +feedEscape(r.type)+'</span>';
     var el=document.createElement("div"); el.className="feed-item";
-    el.innerHTML='<div class="fdot '+(r.type==="IN"?"fdot-in":"fdot-out")+'"></div>'
-      +'<span class="fname" style="font-weight:600">'+r.employee+'</span>'
-      +'<span class="ftype" style="font-weight:400;font-size:12px;color:var(--muted)">'+r.type+'</span>'
-      +'<span class="ftime">'+(r.time||"—")+'</span>';
+    el.innerHTML='<div class="fdot '+style.dot+'"></div>'
+      +'<span class="fname" style="font-weight:600">'
+        +(emoji?emoji+" ":"")+feedEscape(r.name)+'</span>'
+      +typeHtml
+      +(r.detail?'<span class="fdetail">'+feedEscape(r.detail)+'</span>':'')
+      // ★ '—' for a stamp the server could not read. It sorted to the bottom
+      //   there (src/Api.js — apiFeedMinutes_ returns null); it still shows.
+      +'<span class="ftime">'+(r.time?feedEscape(r.time):"—")+'</span>';
     f.appendChild(el);
   });
 }
@@ -2580,7 +2668,9 @@ function renderFeed(roster){
 function getTodayKey(){ return "feed_"+new Date().toLocaleDateString("en-MY"); }
 
 function initFeed(){
-  renderFeed((lastData&&lastData.roster)||[]);
+  // ★ Same field renderDash draws from (KB-056), so a first paint before the
+  //   first sync and a paint after one show the same list.
+  renderFeed((lastData&&lastData.activity_feed)||[]);
   // ★ Behaviour unchanged (T3(e)): same 30 s period, same localStorage sweep of
   //   the keys older builds left behind. Only the handle is new, so logout can
   //   stop it.
