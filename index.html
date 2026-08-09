@@ -591,7 +591,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 9e3b884 — the commit this file's code comes from">9e3b884</span>
+    <span class="build-tag" id="buildTag" title="build dev — unpublished copy; the published build carries its own hash">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -1572,11 +1572,16 @@ function renderDash(d){
     cS.textContent=(ds===null)?"Not submitted":"Not yet"; cS.className="badge bm";
     dc.classList.remove("glow-gold");
   }
-  // ★ There is no season-bonus total in the contract (src/Api.js:2446-2478), so
-  //   this says so rather than showing today's figure under a "TOTAL" label.
-  document.getElementById("totalBonusAmt").textContent="—";
+  // ★ The contract now carries the season figure: `bonus_season_earned` is every
+  //   day of this season the shop actually earned a tier bonus on, today
+  //   included, computed off each row's own targets by the same ladder that
+  //   decided the tier above — so this number and that badge cannot disagree.
+  // ★★ null means the season has no rows yet, which is not the same as zero, so
+  //   it reads "—" rather than RM 0 (kdNum's existing null handling).
+  var tbe=kdNum(d.bonus_season_earned);
+  document.getElementById("totalBonusAmt").textContent=(tbe===null)?"—":tbe.toLocaleString();
   var tbLbl=document.querySelector(".bonus-total-lbl");
-  if(tbLbl) tbLbl.textContent="TOTAL BONUS · not provided by backend";
+  if(tbLbl) tbLbl.textContent="TOTAL BONUS";
 
   if(t3!==null && t3unlocked && !t3UnlockShown){
     t3UnlockShown=true;
