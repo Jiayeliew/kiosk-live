@@ -585,7 +585,13 @@
          shop can sit on last week's file for days and report "the new one is
          broken" — and a photo of the screen cannot tell the two apart. Written
          into the file at commit time; it costs no request. -->
-    <span class="build-tag" id="buildTag" title="build 4e34ded — the commit this file's code comes from">4e34ded</span>
+    <!-- ★★ KD-050 §2. In THIS repo the tag is the fixed placeholder `dev` and is
+         never a hash. Only the published mirror (kiosk-live) carries a real one,
+         stamped against ITS OWN commit — a hash from this repo names a commit
+         that does not exist where the tablet loaded the file from (KB-060).
+         ★ A screen reading `dev` means somebody is looking at an unpublished
+         copy, which is true and useful; a stale hash would be a lie. -->
+    <span class="build-tag" id="buildTag" title="build dev — unpublished copy; the published build carries its own hash">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -2144,10 +2150,24 @@ async function confirmUpdate(){
   //    said the SESSION IS FINE — so it is THIS submission that was refused, and
   //    the only correct thing to do is say so where the promoter is looking and
   //    leave his number in the box. Nothing about the session is touched here.
-  //    ★ 'dead' / 'season_ended' / 'offline' are deliberately NOT caught: they
-  //    still go to kdFail, which is the one place that decides to end a session.
+  //    ★ 'dead' / 'season_ended' are deliberately NOT caught: they still go to
+  //    kdFail, which is the one place that decides to end a session.
   if(res.verdict==="rejected"){
     umSay("Did not go through. Check the amount and try again. (Your session is fine — you are still logged in.)","err");
+    return;
+  }
+  // ★★ R12. 'offline' keeps the modal open too, so its reason was being written
+  //    underneath it exactly as 'rejected' was — same disease, second branch.
+  //    ★★ kdFail IS STILL CALLED, and deliberately: it owns what 'offline' means
+  //    (the OFFLINE sync badge) and, per KD-045, it does NOT touch the token. A
+  //    second copy of that decision here is the KD-047 mistake. This line only
+  //    adds the message where the promoter is actually looking; kdFail's own
+  //    toast still fires under the modal, which is harmless and keeps one source
+  //    of truth for the verdict.
+  if(res.verdict==="offline"){
+    kdFail(res,"Updating today's sales");
+    umSay("Could not reach the backend — NOTHING was sent and nothing was saved. "+
+          "You are still logged in. Check the connection and press Confirm again.","err");
     return;
   }
   if(res.verdict!=="ok"){ kdFail(res,"Updating today's sales"); return; }
