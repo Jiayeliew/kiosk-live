@@ -604,11 +604,14 @@
 
     <section class="hq-card">
       <h2>3 · Targets</h2>
-      <p class="hq-hint">One row per day. Fill all six boxes on every row — a row that
-        is only half filled stops the whole publish before anything is sent.</p>
+      <p class="hq-hint">One row per day. T1, T2, Bonus 1 and Bonus 2 are required on every
+        row; T3 and Bonus 3 may be left empty only together, and half a rung stops the
+        whole publish before anything is sent.</p>
+      <p class="hq-hint" id="hqPrefillNote"></p>
+      <button id="hqFillBtn" class="ghost hidden"></button>
       <div class="hq-days">
         <table id="hqDayTable">
-          <thead><tr><th>Day</th><th>T1</th><th>T2</th><th>T3</th>
+          <thead><tr><th>Day</th><th>Now</th><th>T1</th><th>T2</th><th>T3</th>
             <th>Bonus 1</th><th>Bonus 2</th><th>Bonus 3</th></tr></thead>
           <tbody id="hqDayRows"></tbody>
         </table>
@@ -657,7 +660,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 63d1dc3 — this is the published build; 63d1dc3 is the commit this copy of the page was published from">63d1dc3</span>
+    <span class="build-tag" id="buildTag" title="build dev — unpublished copy; the published build carries its own hash">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -1426,7 +1429,6 @@ var clockTimer = null, feedTimer = null, taskDateTimer = null;
 var dashboardStarted = false;
 var selEmp=null, camStream=null, syncTimer=null, lastData=null, stockData=null;
 var punchState={}; // {empName: "IN"/"OUT"} last punch type per employee today
-var t3UnlockShown=false; // only show T3 unlock popup once per session
 
 // ── The door, from this side ───────────────────────────────
 //
@@ -1627,18 +1629,26 @@ function renderDash(d){
   tierRow("t1Bar","t1Pct","t1Tgt","t1Bonus","t1Badge",ds,t1,b1,true);
   tierRow("t2Bar","t2Pct","t2Tgt","t2Bonus","t2Badge",ds,t2,b2,true);
 
-  // T3 stays locked until T1 is hit today — legacy's rule, kept.
+  // ★★ T3 IS NO LONGER LOCKED BEHIND T1. A published third rung is a target the
+  //    promoter is allowed to see all day, exactly like T1 and T2 — hiding it
+  //    until T1 lands is how a shop spends the morning not knowing what the day
+  //    is actually worth. The only two states left are "published" and "not
+  //    published", which is the only distinction the data carries.
+  // ★ Nothing about WHO GETS PAID changed: the tier and the money below are
+  //   still the server's, still highest-rung-only and still not accumulated.
   var t3row=document.getElementById("t3Bar") && document.getElementById("t3Bar").closest(".tier-row");
-  var t3unlocked=(t3!==null && ds!==null && t1!==null && t1>0 && ds>=t1);
-  if(t3!==null && t3unlocked){
+  if(t3!==null){
     tierRow("t3Bar","t3Pct","t3Tgt","t3Bonus","t3Badge",ds,t3,b3,true);
     if(t3row) t3row.style.opacity="1";
   } else {
+    // ★ The not-published day, unchanged: greyed out, 0%, "—", "Not set".
+    //   The backend now publishes t3 and bonus_3 blank as a PAIR, so this is
+    //   the state a day with no third rung reaches — not an error.
     document.getElementById("t3Bar").style.width="0%";
-    document.getElementById("t3Pct").textContent=(t3===null)?"—":"🔒";
-    document.getElementById("t3Tgt").textContent=(t3===null)?"Not set":"Hit T1 to unlock";
+    document.getElementById("t3Pct").textContent="—";
+    document.getElementById("t3Tgt").textContent="Not set";
     document.getElementById("t3Bonus").textContent=kdMoney(b3);
-    document.getElementById("t3Badge").textContent=(t3===null)?"—":"🔒";
+    document.getElementById("t3Badge").textContent="—";
     document.getElementById("t3Badge").className="badge bm";
     if(t3row) t3row.style.opacity="0.45";
   }
@@ -1675,13 +1685,6 @@ function renderDash(d){
   document.getElementById("totalBonusAmt").textContent=(tbe===null)?"—":tbe.toLocaleString();
   var tbLbl=document.querySelector(".bonus-total-lbl");
   if(tbLbl) tbLbl.textContent="TOTAL BONUS";
-
-  if(t3!==null && t3unlocked && !t3UnlockShown){
-    t3UnlockShown=true;
-    setTimeout(function(){
-      showToast("🎉 T1 Hit! T3 Unlocked → RM "+t3.toLocaleString()+" — push for more!","ok",5000);
-    },500);
-  }
 
   tierRow("tt1Bar","tt1Pct","tt1Tgt","tt1BonusPct","tt1Badge",ts,tt1,kdNum(rates.tt1),false);
   tierRow("tt2Bar","tt2Pct","tt2Tgt","tt2BonusPct","tt2Badge",ts,tt2,kdNum(rates.tt2),false);
@@ -3234,6 +3237,11 @@ function stopDashboard(){
 #hqView .hq-days input{width:86px;padding:8px;font-size:15px;border:1px solid #ccc;
   border-radius:6px}
 #hqView .hq-days input.bad{border-color:#c0392b;background:#fff6f5}
+#hqView .hq-days td .state-new,#hqView .hq-days td.state-new{color:#1e7e34}
+#hqView .hq-days td.state-update{color:#b8860b}
+#hqView .hq-days td.state-mixed{color:#c0392b}
+#hqView .hq-days td[id^=hqState_]{font-size:11px;font-weight:700;letter-spacing:.5px}
+#hqView #hqFillBtn{margin-bottom:10px}
 #hqView input[type=date]{padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px}
 #hqView button{padding:12px 18px;font-size:16px;border-radius:8px;border:0;
   background:#c0392b;color:#fff;min-height:44px}
@@ -3331,6 +3339,23 @@ function stopDashboard(){
     { key: 'bonus_3', label: 'Bonus 3' }
   ];
 
+  /**
+   * ★★ THE ONE PAIR THAT MAY BE LEFT EMPTY, AND ONLY AS A PAIR. This is the
+   *    SAME rule the server keeps (src/Api.js API_TARGET_OPTIONAL_COLS): both
+   *    blank publishes a day with no third rung and CLEARS those two cells;
+   *    one blank is refused by name. Anything else here would either send a
+   *    week the server throws back, or stop a week the server would accept.
+   */
+  var HQ_OPTIONAL_KEYS = ['t3', 'bonus_3'];
+
+  /** Is this row's third rung left out — BOTH boxes blank, never one? */
+  function hqPairOmitted(row) {
+    for (var i = 0; i < HQ_OPTIONAL_KEYS.length; i++) {
+      if (String(row[HQ_OPTIONAL_KEYS[i]]).trim() !== '') { return false; }
+    }
+    return true;
+  }
+
   var HQ_DAYS_IN_WEEK = 7;
 
   function hqPad(n) { return (n < 10 ? '0' : '') + n; }
@@ -3392,6 +3417,18 @@ function stopDashboard(){
     return { start: hqShift(week[0], -HQ_DAYS_IN_WEEK), end: hqShift(week[0], -1) };
   }
 
+  /**
+   * ★★ ONE REQUEST, FOURTEEN DAYS. start−7 … start+6 covers the history panel
+   *    AND the publish week in a single getStoreWeek, so coming back to edit
+   *    what was already published costs no extra round trip. 14 is well inside
+   *    the backend's 31-day ceiling (range_too_long).
+   */
+  function hqFetchRange() {
+    var week = hqWeekDates();
+    if (week.length === 0) { return null; }
+    return { start: hqShift(week[0], -HQ_DAYS_IN_WEEK), end: week[week.length - 1] };
+  }
+
   function hqTickedStores() {
     var boxes = el.stores.querySelectorAll('input[type=checkbox]');
     var out = [];
@@ -3436,6 +3473,11 @@ function stopDashboard(){
       var th = document.createElement('td');
       th.textContent = hqDayLabel(week[i]);
       tr.appendChild(th);
+      // ★ NEW / UPDATE / MIXED for this date, filled in by hqPaintDayStates()
+      //   as soon as the ticked shops' weeks come back.
+      var state = document.createElement('td');
+      state.id = 'hqState_' + i;
+      tr.appendChild(state);
       for (var f = 0; f < HQ_FIELDS.length; f++) {
         var td = document.createElement('td');
         var input = document.createElement('input');
@@ -3446,11 +3488,106 @@ function stopDashboard(){
         input.id = hqInputId(i, HQ_FIELDS[f].key);
         input.setAttribute('aria-label', hqDayLabel(week[i]) + ' ' + HQ_FIELDS[f].label);
         if (kept[i]) { input.value = kept[i][HQ_FIELDS[f].key]; }
+        // ★ Typing marks the grid dirty, which is what stops a later re-tick
+        //   from overwriting it.
+        input.addEventListener('input', function () { hqGridDirty = true; });
         td.appendChild(input);
         tr.appendChild(td);
       }
       el.dayRows.appendChild(tr);
     }
+    hqPaintDayStates();
+  }
+
+  // -------------------------------------------------------------------------
+  // What is already published, and pre-filling from it
+  // -------------------------------------------------------------------------
+
+  /**
+   * ★★ TRUE THE MOMENT THE OPERATOR TYPES. It is the only thing standing
+   *    between a re-tick and somebody's half-finished week, and it is cleared
+   *    ONLY by a pre-fill this code performed or by the dates changing.
+   */
+  var hqGridDirty = false;
+
+  /** NEW / UPDATE / MIXED for one date across the ticked shops, or '' if unknown. */
+  function hqDayState(date) {
+    var ticked = hqTickedStores();
+    var known = 0, withRow = 0;
+    for (var i = 0; i < ticked.length; i++) {
+      var pub = hqPublished[ticked[i]];
+      if (!pub) { continue; }
+      known++;
+      if (pub[date]) { withRow++; }
+    }
+    if (known === 0) { return ''; }
+    if (withRow === 0) { return 'NEW'; }
+    if (withRow === known) { return 'UPDATE'; }
+    return 'MIXED';
+  }
+
+  /** Repaint the per-row NEW / UPDATE / MIXED marks without rebuilding inputs. */
+  function hqPaintDayStates() {
+    for (var i = 0; i < hqRowDates.length; i++) {
+      var cell = grab('hqState_' + i);
+      if (!cell) { continue; }
+      var state = hqDayState(hqRowDates[i]);
+      cell.textContent = state;
+      cell.className = state ? ('state-' + state.toLowerCase()) : '';
+    }
+  }
+
+  /** Copy one store's published week into the grid. Overwrites; callers decide. */
+  function hqFillFrom(name) {
+    var pub = hqPublished[name] || {};
+    for (var i = 0; i < hqRowDates.length; i++) {
+      var row = pub[hqRowDates[i]];
+      for (var f = 0; f < HQ_FIELDS.length; f++) {
+        var input = grab(hqInputId(i, HQ_FIELDS[f].key));
+        if (!input) { continue; }
+        var value = row ? row[HQ_FIELDS[f].key] : null;
+        // ★ A day with no published value leaves its boxes empty — an empty box
+        //   and a published 0 must not look the same.
+        input.value = (typeof value === 'number') ? String(value) : '';
+      }
+    }
+    hqGridDirty = false;
+    el.fill.classList.add('hidden');
+  }
+
+  /**
+   * The rule, exactly: ONE store ticked pre-fills; two or more never do; and a
+   * grid the operator has typed into is NEVER replaced without a click.
+   */
+  function hqAfterSelectionChanged() {
+    var ticked = hqTickedStores();
+    hqPaintDayStates();
+
+    if (ticked.length > 1) {
+      el.fill.classList.add('hidden');
+      el.prefill.textContent = 'The grid is not pre-filled because more than one shop is ' +
+        'selected. Each shop’s current values are in its own panel below.';
+      return;
+    }
+    if (ticked.length === 0) { el.fill.classList.add('hidden');
+      el.prefill.textContent = ''; return; }
+
+    var name = ticked[0];
+    if (!hqPublished[name]) { el.prefill.textContent = ''; return; }
+
+    if (hqGridDirty) {
+      // ★★ NEVER SILENTLY. The operator has typed something; replacing it takes
+      //    a deliberate click and nothing less.
+      el.fill.classList.remove('hidden');
+      el.fill.textContent = 'Replace what I typed with ' + name + '’s published values';
+      el.prefill.textContent = 'The grid was not pre-filled: you have typed in it since it was ' +
+        'last filled. Use the button to replace what you typed with ' + name + '’s ' +
+        'published values.';
+      return;
+    }
+    hqFillFrom(name);
+    el.prefill.textContent = 'Pre-filled from ' + name + '’s published values. Days marked NEW ' +
+      'have no row yet; days marked UPDATE already have one.';
   }
 
   /** The grid as typed, one object per day. Strings, never coerced here. */
@@ -3477,11 +3614,19 @@ function stopDashboard(){
    */
   function hqFirstBadBox(rows) {
     for (var i = 0; i < rows.length; i++) {
+      // ★★ PER ROW, NOT PER WEEK. Monday may publish a third rung and Tuesday
+      //    may leave it out; each day is its own ladder and its own request.
+      var omitted = hqPairOmitted(rows[i]);
       for (var f = 0; f < HQ_FIELDS.length; f++) {
+        // ★ Both halves blank is a published answer — skip them and judge the
+        //   other four exactly as before. HALF a rung is NOT skipped: it falls
+        //   through and names the day and the box, same as any other blank.
+        if (omitted && HQ_OPTIONAL_KEYS.indexOf(HQ_FIELDS[f].key) !== -1) { continue; }
         var raw = String(rows[i][HQ_FIELDS[f].key]).trim();
         var where = hqDayLabel(hqRowDates[i]) + ' — ' + HQ_FIELDS[f].label;
         if (raw === '') { return { index: i, key: HQ_FIELDS[f].key,
-          text: where + ' is empty. Fill in all six boxes on every one of the seven days.' }; }
+          text: where + ' is empty. Every day needs T1, T2, Bonus 1 and Bonus 2; ' +
+                'T3 and Bonus 3 may be left out only if BOTH of them are.' }; }
         var value = Number(raw);
         if (!isFinite(value)) { return { index: i, key: HQ_FIELDS[f].key,
           text: where + ' is not a number.' }; }
@@ -3602,8 +3747,17 @@ function stopDashboard(){
         parts.push(HQ_FIELDS[f].label + ' = ' + rows[i][HQ_FIELDS[f].key]);
       }
       html += parts.join(' &nbsp; ') + '<br>';
+      // ★★ NEW or UPDATE, PER SHOP, BEFORE HE CONFIRMS. Overwriting a day that
+      //    already carries a ladder must be visible at the moment of deciding.
+      for (var t = 0; t < stores.length; t++) {
+        var pub = hqPublished[stores[t]];
+        var mark = !pub ? '(not loaded)' : (pub[week[i]] ? 'UPDATE' : 'NEW');
+        html += '&nbsp;&nbsp;&nbsp;&nbsp;<small>' + stores[t] + ' — ' + mark + '</small><br>';
+      }
     }
-    html += '<br>' + (stores.length * week.length) + ' writes in total.<br><br>';
+    html += '<br>' + (stores.length * week.length) + ' writes in total.<br>';
+    html += '<small>UPDATE changes only the six target cells on that row. It does NOT ' +
+            'touch sales the shop has already entered.</small><br><br>';
     html += '<button id="hqGoBtn">Confirm and publish</button> ' +
             '<button id="hqCancelBtn" class="ghost">Cancel</button>';
     el.confirm.innerHTML = html;
@@ -3666,10 +3820,17 @@ function stopDashboard(){
         // ★★ THIS DAY'S OWN ROW. plan.rows[d] is the six values typed on the
         //    grid line labelled with this very date.
         var row = plan.rows[d];
+        // ★★ AN OMITTED THIRD RUNG IS SENT AS TWO EMPTY STRINGS, deliberately.
+        //    The server reads '' as "left out" and CLEARS columns F and I, so a
+        //    day republished without a third rung stops showing the old one.
+        //    Sending the raw box would send whatever whitespace was typed into
+        //    it, which the server reads as a number it cannot parse.
+        var rungOut = hqPairOmitted(row);
         var res = await hqSend({
           action: 'publishTargets', store: store, date: date,
-          t1: row.t1, t2: row.t2, t3: row.t3,
-          bonus_1: row.bonus_1, bonus_2: row.bonus_2, bonus_3: row.bonus_3
+          t1: row.t1, t2: row.t2, t3: rungOut ? '' : row.t3,
+          bonus_1: row.bonus_1, bonus_2: row.bonus_2,
+          bonus_3: rungOut ? '' : row.bonus_3
         }, dead);
 
         done++;
@@ -3730,7 +3891,10 @@ function stopDashboard(){
    */
   var hqQueue = [];
   var hqQueueRunning = false;
-  var hqPanels = {};   // store name -> the HTML of its table, once fetched
+  var hqPanels = {};    // store name -> the HTML of its history table, once fetched
+  // ★ store name -> { date -> the day's already-published row }. Only the seven
+  //   publish-week days land here; the history days stay in hqPanels' HTML.
+  var hqPublished = {};
 
   function hqOnStoreToggle(event) {
     var name = event.target.value;
@@ -3743,6 +3907,7 @@ function stopDashboard(){
     } else {
       // Unticked: the panel goes, and a queued fetch for it is dropped.
       delete hqPanels[name];
+      delete hqPublished[name];
       var kept = [];
       for (var i = 0; i < hqQueue.length; i++) {
         if (hqQueue[i] !== name) { kept.push(hqQueue[i]); }
@@ -3750,6 +3915,7 @@ function stopDashboard(){
       hqQueue = kept;
       hqPaintPanels();
     }
+    hqAfterSelectionChanged();
   }
 
   /** Panels are painted in the order the stores appear in the list, not in fetch order. */
@@ -3770,32 +3936,60 @@ function stopDashboard(){
       var name = hqQueue.shift();
       // Unticked while it waited: skip without spending a request.
       if (!hqPanels[name]) { continue; }
-      var range = hqHistoryRange();
-      if (range === null) {
+      var fetch = hqFetchRange();
+      var history = hqHistoryRange();
+      if (fetch === null) {
         hqPanels[name] = '<table><caption>' + name + '</caption>' +
                          '<tr><td>Pick a start date first.</td></tr></table>';
         hqPaintPanels();
         continue;
       }
+      // ★ ONE request, fourteen days, split below. Not two calls.
       var res = await hqSend({ action: 'getStoreWeek', store: name,
-                               start_date: range.start, end_date: range.end }, dead);
+                               start_date: fetch.start, end_date: fetch.end }, dead);
       if (!hqPanels[name]) { continue; }   // unticked while in flight
-      hqPanels[name] = hqPanelHtml(name, range, res);
+      hqStoreResult(name, history, res);
       hqPaintPanels();
+      hqAfterSelectionChanged();
     }
 
     hqQueueRunning = false;
     if (dead.hit) { hqDie(); }
   }
 
-  function hqPanelHtml(name, range, res) {
+  /**
+   * Split one fourteen-day answer: the days before the week become the history
+   * panel, the seven days of the week become that store's already-published
+   * values. A date outside both is impossible, but is simply ignored.
+   */
+  function hqStoreResult(name, history, res) {
+    if (!res.ok) {
+      hqPanels[name] = hqPanelHtml(name, history, res, []);
+      delete hqPublished[name];
+      return;
+    }
+    var days = res.data.days || [];
+    var before = [];
+    var week = {};
+    var weekDates = {};
+    var dates = hqWeekDates();
+    for (var w = 0; w < dates.length; w++) { weekDates[dates[w]] = true; }
+
+    for (var d = 0; d < days.length; d++) {
+      if (weekDates[days[d].date] === true) { week[days[d].date] = days[d]; }
+      else if (days[d].date <= history.end) { before.push(days[d]); }
+    }
+    hqPublished[name] = week;
+    hqPanels[name] = hqPanelHtml(name, history, res, before);
+  }
+
+  function hqPanelHtml(name, range, res, days) {
     var html = '<table><caption>' + name + ' — ' + hqDayLabel(range.start) + ' to ' +
                hqDayLabel(range.end) + ' (' + range.start + ' … ' + range.end + ')</caption>';
     if (!res.ok) { return html + '<tr><td>' + res.text + '</td></tr></table>'; }
 
     html += '<tr><th>Day</th><th>Sales</th><th>T1</th><th>T2</th><th>T3</th>' +
             '<th>Bonus 1</th><th>Bonus 2</th><th>Bonus 3</th></tr>';
-    var days = res.data.days || [];
     if (days.length === 0) {
       html += '<tr><td colspan="8">No rows at all in these seven days.</td></tr>';
     }
@@ -3813,6 +4007,7 @@ function stopDashboard(){
   function hqRefreshPanels() {
     var ticked = hqTickedStores();
     hqPanels = {};
+    hqPublished = {};
     hqQueue = [];
     for (var i = 0; i < ticked.length; i++) {
       hqPanels[ticked[i]] = '<table><caption>' + ticked[i] + '</caption>' +
@@ -3840,7 +4035,8 @@ function stopDashboard(){
   window.showHqView = function (store) {
     el.view = grab('hqView'); el.stores = grab('hqStoreList');
     el.start = grab('hqStartDate'); el.dates = grab('hqWeekDates');
-    el.dayRows = grab('hqDayRows');
+    el.dayRows = grab('hqDayRows'); el.prefill = grab('hqPrefillNote');
+    el.fill = grab('hqFillBtn');
     el.publish = grab('hqPublishBtn'); el.confirm = grab('hqConfirm');
     el.progress = grab('hqProgress'); el.week = grab('hqWeekPanel');
 
@@ -3856,6 +4052,11 @@ function stopDashboard(){
       el.start.addEventListener('change', function () {
         hqRenderDayRows();
         hqRefreshPanels();
+      });
+      // ★ The one and only way a typed grid gets replaced.
+      el.fill.addEventListener('click', function () {
+        var ticked = hqTickedStores();
+        if (ticked.length === 1) { hqFillFrom(ticked[0]); hqAfterSelectionChanged(); }
       });
       el.publish.addEventListener('click', hqAskConfirm);
       grab('hqLogoutBtn').addEventListener('click', function () { window.endSession(); });
