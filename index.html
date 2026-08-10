@@ -588,38 +588,42 @@
 
   <div class="hq-wrap">
     <section class="hq-card">
-      <h2>1 · 选择店铺 <small>Stores</small></h2>
-      <p class="hq-hint">全部预设不勾选。请自行勾选要发布的店铺。</p>
-      <div id="hqStoreList" class="hq-stores">正在载入店铺名单…</div>
+      <h2>1 · Stores</h2>
+      <p class="hq-hint">Nothing is ticked to start with. Tick the stores you want to
+        publish to. Ticking one also loads its previous week below.</p>
+      <div id="hqStoreList" class="hq-stores">Loading the store list…</div>
     </section>
 
     <section class="hq-card">
-      <h2>2 · 选择开始日期 <small>Week start</small></h2>
-      <p class="hq-hint">从这一天起，连续七天，每天写入同样的六个数字。</p>
+      <h2>2 · Week</h2>
+      <p class="hq-hint">Seven days, starting on the date you pick. Each day gets its
+        own set of six numbers — they do not have to be the same.</p>
       <input id="hqStartDate" type="date">
-      <div id="hqWeekDates" class="hq-dates">请选择开始日期。</div>
+      <div id="hqWeekDates" class="hq-dates"></div>
     </section>
 
     <section class="hq-card">
-      <h2>3 · 输入目标 <small>Targets</small></h2>
-      <div class="hq-grid">
-        <label>T1 <input id="hqT1" type="number" inputmode="decimal" min="0" step="any"></label>
-        <label>T2 <input id="hqT2" type="number" inputmode="decimal" min="0" step="any"></label>
-        <label>T3 <input id="hqT3" type="number" inputmode="decimal" min="0" step="any"></label>
-        <label>Bonus 1 <input id="hqB1" type="number" inputmode="decimal" min="0" step="any"></label>
-        <label>Bonus 2 <input id="hqB2" type="number" inputmode="decimal" min="0" step="any"></label>
-        <label>Bonus 3 <input id="hqB3" type="number" inputmode="decimal" min="0" step="any"></label>
+      <h2>3 · Targets</h2>
+      <p class="hq-hint">One row per day. Fill all six boxes on every row — a row that
+        is only half filled stops the whole publish before anything is sent.</p>
+      <div class="hq-days">
+        <table id="hqDayTable">
+          <thead><tr><th>Day</th><th>T1</th><th>T2</th><th>T3</th>
+            <th>Bonus 1</th><th>Bonus 2</th><th>Bonus 3</th></tr></thead>
+          <tbody id="hqDayRows"></tbody>
+        </table>
       </div>
-      <button id="hqPublishBtn">发布 Publish</button>
+      <button id="hqPublishBtn">Publish</button>
       <div id="hqConfirm" class="hq-confirm hidden"></div>
       <div id="hqProgress" class="hq-progress"></div>
     </section>
 
     <section class="hq-card">
-      <h2>上周实绩 <small>Last week</small></h2>
-      <p class="hq-hint">勾选店铺后按下方按钮。<b>—</b> 表示格子是空的；没有那一行就完全不显示。</p>
-      <button id="hqWeekBtn" class="ghost">载入上周 Load</button>
-      <div id="hqWeekPanel" class="hq-week"></div>
+      <h2>The week before</h2>
+      <p class="hq-hint">Loads by itself for every store you tick — the seven days
+        immediately before the week above. <b>—</b> means the cell was empty; a day
+        with no row at all is not listed.</p>
+      <div id="hqWeekPanel" class="hq-week">Tick a store to see its previous week.</div>
     </section>
   </div>
 </div>
@@ -653,7 +657,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build a611a5c — this is the published build; a611a5c is the commit this copy of the page was published from">a611a5c</span>
+    <span class="build-tag" id="buildTag" title="build dev — unpublished copy; the published build carries its own hash">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -3221,9 +3225,15 @@ function stopDashboard(){
 #hqView .hq-stores label{display:flex;align-items:center;gap:6px;border:1px solid #ddd;
   border-radius:8px;padding:8px 10px;font-size:14px;min-height:44px}
 #hqView .hq-dates{margin-top:10px;font-size:14px;line-height:1.7}
-#hqView .hq-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
-#hqView .hq-grid label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:#555}
-#hqView .hq-grid input{padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px}
+#hqView .hq-days{overflow-x:auto;margin-bottom:12px}
+#hqView .hq-days table{border-collapse:collapse;width:100%;font-size:13px}
+#hqView .hq-days th,#hqView .hq-days td{border:1px solid #e0e0e0;padding:5px 6px;
+  white-space:nowrap}
+#hqView .hq-days th{background:#f6f6f6;font-weight:600;font-size:12px;color:#555}
+#hqView .hq-days td:first-child{font-weight:600}
+#hqView .hq-days input{width:86px;padding:8px;font-size:15px;border:1px solid #ccc;
+  border-radius:6px}
+#hqView .hq-days input.bad{border-color:#c0392b;background:#fff6f5}
 #hqView input[type=date]{padding:10px;font-size:16px;border:1px solid #ccc;border-radius:8px}
 #hqView button{padding:12px 18px;font-size:16px;border-radius:8px;border:0;
   background:#c0392b;color:#fff;min-height:44px}
@@ -3239,14 +3249,14 @@ function stopDashboard(){
   white-space:nowrap}
 #hqView .hq-week th:first-child,#hqView .hq-week td:first-child{text-align:left}
 #hqView .hq-week caption{text-align:left;font-weight:600;padding:10px 0 4px}
-@media(max-width:560px){#hqView .hq-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){#hqView .hq-days input{width:70px}}
 </style>
 <script>
 (function () {
   'use strict';
 
   /**
-   * ★★ EVERY REFUSAL THE BACKEND CAN NAME, IN PLAIN CHINESE. The keys are
+   * ★★ EVERY REFUSAL THE BACKEND CAN NAME, IN PLAIN ENGLISH. The keys are
    *    copied from src/Api.js's apiPublishRefusal_ doc block — the closed
    *    vocabulary itself, not a guess at it. The raw reason string is NEVER
    *    shown: it is written for the architect, not for the person holding the
@@ -3255,29 +3265,35 @@ function stopDashboard(){
    *    its message says to go and look rather than to send again.
    */
   var HQ_REASONS = {
-    t1_missing:'T1 没有填', t2_missing:'T2 没有填', t3_missing:'T3 没有填',
-    bonus_1_missing:'Bonus 1 没有填', bonus_2_missing:'Bonus 2 没有填',
-    bonus_3_missing:'Bonus 3 没有填',
-    t1_not_a_number:'T1 不是数字', t2_not_a_number:'T2 不是数字',
-    t3_not_a_number:'T3 不是数字', bonus_1_not_a_number:'Bonus 1 不是数字',
-    bonus_2_not_a_number:'Bonus 2 不是数字', bonus_3_not_a_number:'Bonus 3 不是数字',
-    t1_negative:'T1 不可以是负数', t2_negative:'T2 不可以是负数',
-    t3_negative:'T3 不可以是负数', bonus_1_negative:'Bonus 1 不可以是负数',
-    bonus_2_negative:'Bonus 2 不可以是负数', bonus_3_negative:'Bonus 3 不可以是负数',
-    target_is_hq:'这一行是 HQ，不是店铺，不能发布。',
-    date_malformed:'日期格式不对。',
-    date_in_past:'这一天已经过去了，不能发布。',
-    store_not_resolvable:'名单里找不到这间店，或者同名有两行，或者档案打不开。请查 HQ MASTER 的 STORES。',
-    sales_tab_missing:'这间店的档案没有 SALES 分页。请跑 auditStoreFiles()。',
-    event_name_unreadable:'这间店的 CONFIG 没有季节名字（EVENT_NAME），不能盖章。请重新同步这间店。',
-    lock_unavailable:'同一时间有别人在写这间店，这一天没有写进去。等一下再发一次就可以。',
-    duplicate_date_rows:'这一天在 SALES 里有超过一行，不敢乱写。请手动删到剩一行。',
-    sales_headers_mismatch:'这间店的 SALES 标题行不对。请跑 auditStoreFiles()。',
-    start_date_malformed:'开始日期格式不对。',
-    end_date_malformed:'结束日期格式不对。',
-    range_reversed:'结束日期在开始日期之前。',
-    range_too_long:'一次最多只能看 31 天。',
-    write_failed:'★ 写到一半失败了 —— 这一天可能已经写了一部分。不要再发一次，请先亲自打开这间店的 SALES 看清楚。'
+    t1_missing:'T1 was left empty.', t2_missing:'T2 was left empty.',
+    t3_missing:'T3 was left empty.', bonus_1_missing:'Bonus 1 was left empty.',
+    bonus_2_missing:'Bonus 2 was left empty.', bonus_3_missing:'Bonus 3 was left empty.',
+    t1_not_a_number:'T1 is not a number.', t2_not_a_number:'T2 is not a number.',
+    t3_not_a_number:'T3 is not a number.', bonus_1_not_a_number:'Bonus 1 is not a number.',
+    bonus_2_not_a_number:'Bonus 2 is not a number.', bonus_3_not_a_number:'Bonus 3 is not a number.',
+    t1_negative:'T1 cannot be below zero.', t2_negative:'T2 cannot be below zero.',
+    t3_negative:'T3 cannot be below zero.', bonus_1_negative:'Bonus 1 cannot be below zero.',
+    bonus_2_negative:'Bonus 2 cannot be below zero.', bonus_3_negative:'Bonus 3 cannot be below zero.',
+    target_is_hq:'That name is the HQ row, not a shop. It cannot be published to.',
+    date_malformed:'The date is not in the right format.',
+    date_in_past:'That day has already gone by, so it cannot be published.',
+    store_not_resolvable:'This shop could not be found: the name is not in STORES, or two rows ' +
+      'carry it, or its file will not open. Check STORES in HQ MASTER.',
+    sales_tab_missing:'This shop’s file has no SALES tab. Run auditStoreFiles().',
+    event_name_unreadable:'This shop’s CONFIG has no season name (EVENT_NAME), so the row ' +
+      'cannot be stamped. Re-sync this shop.',
+    lock_unavailable:'Someone else was writing to this shop at the same moment, so this day was ' +
+      'NOT written. Wait a moment and publish again.',
+    duplicate_date_rows:'This day already has more than one row in SALES, so nothing was written. ' +
+      'Delete the extra rows by hand, leaving one.',
+    sales_headers_mismatch:'This shop’s SALES heading row is not the one this system built. ' +
+      'Run auditStoreFiles().',
+    start_date_malformed:'The start date is not in the right format.',
+    end_date_malformed:'The end date is not in the right format.',
+    range_reversed:'The end date is before the start date.',
+    range_too_long:'You can only look at 31 days at a time.',
+    write_failed:'★ The write failed part way — this day may be HALF WRITTEN. Do NOT ' +
+      'publish again. Open this shop’s SALES tab and check that day by hand first.'
   };
 
   /**
@@ -3285,8 +3301,10 @@ function stopDashboard(){
    *   likeliest cause named so there is somewhere to look — the raw reason
    *   string is not shown because there is not one.
    */
-  var HQ_UNEXPLAINED_TEXT = '这一天没有写进去：后台在读这间店的档案或 HQ MASTER 的时候出了意外的错误。' +
-                            '这不是重发就能解决的，最常见的原因是 STORES 名单里有两行店名只差大小写 —— 请先去检查名单。';
+  var HQ_UNEXPLAINED_TEXT = 'This day was NOT written: the backend hit an unexpected error while ' +
+                            'reading this shop’s file or HQ MASTER. Publishing again will not ' +
+                            'fix it — the usual cause is two rows in STORES whose names differ ' +
+                            'only by capital letters, so check the store list first.';
 
   /** How many of those in a row before the loop gives up. */
   var HQ_UNEXPLAINED_LIMIT = 3;
@@ -3297,7 +3315,7 @@ function stopDashboard(){
     //   the bare uniform failure, which kdSend has already re-checked with
     //   whoami — so this text is only ever seen if the backend grows a new
     //   string before this table does.
-    return '被拒绝了，但没有说明原因。请通知维护的人。';
+    return 'Refused, with no reason given. Tell whoever maintains this system.';
   }
 
   var el = {};
@@ -3305,6 +3323,15 @@ function stopDashboard(){
 
   var hqStores = [];        // names, in the order listStores returned them
   var hqPendingPlan = null; // set by the first Publish click, sent by the second
+
+  /** The six request fields, in ladder order. Used for inputs AND for reading back. */
+  var HQ_FIELDS = [
+    { key: 't1', label: 'T1' }, { key: 't2', label: 'T2' }, { key: 't3', label: 'T3' },
+    { key: 'bonus_1', label: 'Bonus 1' }, { key: 'bonus_2', label: 'Bonus 2' },
+    { key: 'bonus_3', label: 'Bonus 3' }
+  ];
+
+  var HQ_DAYS_IN_WEEK = 7;
 
   function hqPad(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -3317,13 +3344,32 @@ function stopDashboard(){
     return d.getUTCFullYear() + '-' + hqPad(d.getUTCMonth() + 1) + '-' + hqPad(d.getUTCDate());
   }
 
-  var HQ_WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+  var HQ_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var HQ_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+  function hqDateOf(dateText) {
+    return new Date(Date.UTC(Number(dateText.substring(0, 4)),
+                             Number(dateText.substring(5, 7)) - 1,
+                             Number(dateText.substring(8, 10))));
+  }
+
+  /** 'Mon 10 Aug' — what a row is labelled with. */
+  function hqDayLabel(dateText) {
+    var d = hqDateOf(dateText);
+    return HQ_WEEKDAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + HQ_MONTHS[d.getUTCMonth()];
+  }
+
+  /** 'Mon 10 Aug (2026-08-10)' — what the confirmation reads back. */
   function hqDateInWords(dateText) {
-    var d = new Date(Date.UTC(Number(dateText.substring(0, 4)),
-                              Number(dateText.substring(5, 7)) - 1,
-                              Number(dateText.substring(8, 10))));
-    return dateText + '（星期' + HQ_WEEKDAYS[d.getUTCDay()] + '）';
+    return hqDayLabel(dateText) + ' (' + dateText + ')';
+  }
+
+  /** Today in Asia/Kuala_Lumpur, as 'yyyy-MM-dd'. Never the browser's own zone. */
+  function hqToday() {
+    var parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur',
+      year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    return parts;
   }
 
   /** The seven consecutive days a start date means, or [] when none is picked. */
@@ -3331,8 +3377,19 @@ function stopDashboard(){
     var start = el.start.value;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) { return []; }
     var out = [];
-    for (var i = 0; i < 7; i++) { out.push(hqShift(start, i)); }
+    for (var i = 0; i < HQ_DAYS_IN_WEEK; i++) { out.push(hqShift(start, i)); }
     return out;
+  }
+
+  /**
+   * ★ The seven days IMMEDIATELY BEFORE the publish week: start−7 through
+   *   start−1. It moves with the picker, so the history always sits directly
+   *   behind the week being written.
+   */
+  function hqHistoryRange() {
+    var week = hqWeekDates();
+    if (week.length === 0) { return null; }
+    return { start: hqShift(week[0], -HQ_DAYS_IN_WEEK), end: hqShift(week[0], -1) };
   }
 
   function hqTickedStores() {
@@ -3344,33 +3401,112 @@ function stopDashboard(){
     return out;
   }
 
-  /** The six boxes, as the strings the operator typed. Never coerced here. */
-  function hqValues() {
-    return { t1: el.t1.value, t2: el.t2.value, t3: el.t3.value,
-             bonus_1: el.b1.value, bonus_2: el.b2.value, bonus_3: el.b3.value };
+  // -------------------------------------------------------------------------
+  // The seven-row grid — one day, one set of six values
+  // -------------------------------------------------------------------------
+
+  /**
+   * ★★ SEVEN ROWS, SEVEN SEPARATE SETS OF VALUES. The inputs are rebuilt only
+   *    when the DATES change; re-labelling alone leaves whatever was typed
+   *    exactly where it was, so moving the start date by a day does not wipe
+   *    six columns of work.
+   */
+  var hqRowDates = [];
+
+  function hqInputId(index, key) { return 'hqIn_' + index + '_' + key; }
+
+  function hqRenderDayRows() {
+    var week = hqWeekDates();
+    el.dates.textContent = (week.length === 0) ? 'Pick a start date.'
+      : 'Seven days: ' + hqDayLabel(week[0]) + ' through ' + hqDayLabel(week[6]) + '.';
+
+    var sameDates = (week.length === hqRowDates.length);
+    for (var c = 0; sameDates && c < week.length; c++) {
+      if (week[c] !== hqRowDates[c]) { sameDates = false; }
+    }
+    if (sameDates) { return; }
+
+    // Keep what was typed, keyed by the row's position, not by its date.
+    var kept = hqReadRows();
+    hqRowDates = week;
+    el.dayRows.innerHTML = '';
+
+    for (var i = 0; i < week.length; i++) {
+      var tr = document.createElement('tr');
+      var th = document.createElement('td');
+      th.textContent = hqDayLabel(week[i]);
+      tr.appendChild(th);
+      for (var f = 0; f < HQ_FIELDS.length; f++) {
+        var td = document.createElement('td');
+        var input = document.createElement('input');
+        input.type = 'number';
+        input.inputMode = 'decimal';
+        input.min = '0';
+        input.step = 'any';
+        input.id = hqInputId(i, HQ_FIELDS[f].key);
+        input.setAttribute('aria-label', hqDayLabel(week[i]) + ' ' + HQ_FIELDS[f].label);
+        if (kept[i]) { input.value = kept[i][HQ_FIELDS[f].key]; }
+        td.appendChild(input);
+        tr.appendChild(td);
+      }
+      el.dayRows.appendChild(tr);
+    }
   }
 
-  function hqRenderWeekDates() {
-    var week = hqWeekDates();
-    if (week.length === 0) { el.dates.textContent = '请选择开始日期。'; return; }
-    var html = '这七天会被写入（每一天都是同样的六个数字）：<br>';
-    for (var i = 0; i < week.length; i++) { html += '　' + hqDateInWords(week[i]) + '<br>'; }
-    el.dates.innerHTML = html;
+  /** The grid as typed, one object per day. Strings, never coerced here. */
+  function hqReadRows() {
+    var out = [];
+    for (var i = 0; i < hqRowDates.length; i++) {
+      var row = {};
+      var any = true;
+      for (var f = 0; f < HQ_FIELDS.length; f++) {
+        var input = grab(hqInputId(i, HQ_FIELDS[f].key));
+        if (!input) { any = false; break; }
+        row[HQ_FIELDS[f].key] = input.value;
+      }
+      if (any) { out.push(row); }
+    }
+    return out;
+  }
+
+  /**
+   * ★★ REFUSE A PARTIAL WEEK CLIENT-SIDE. Naming the date and the box is the
+   *    whole point: "something is missing" makes the operator hunt 42 boxes.
+   *    Returns null when every row is complete, or a message naming the first
+   *    box that is not.
+   */
+  function hqFirstBadBox(rows) {
+    for (var i = 0; i < rows.length; i++) {
+      for (var f = 0; f < HQ_FIELDS.length; f++) {
+        var raw = String(rows[i][HQ_FIELDS[f].key]).trim();
+        var where = hqDayLabel(hqRowDates[i]) + ' — ' + HQ_FIELDS[f].label;
+        if (raw === '') { return { index: i, key: HQ_FIELDS[f].key,
+          text: where + ' is empty. Fill in all six boxes on every one of the seven days.' }; }
+        var value = Number(raw);
+        if (!isFinite(value)) { return { index: i, key: HQ_FIELDS[f].key,
+          text: where + ' is not a number.' }; }
+        if (value < 0) { return { index: i, key: HQ_FIELDS[f].key,
+          text: where + ' is below zero.' }; }
+      }
+    }
+    return null;
   }
 
   /**
    * ★ One line per store, ALL UNTICKED. There is no select-all and no default
    *   tick anywhere: 49 writes into nineteen live files is not something a
    *   screen may pre-arm on somebody's behalf.
+   * ★ Ticking one also loads that store's previous week, through the queue.
    */
   function hqRenderStores() {
-    if (hqStores.length === 0) { el.stores.textContent = '没有拿到店铺名单。'; return; }
+    if (hqStores.length === 0) { el.stores.textContent = 'The store list came back empty.'; return; }
     el.stores.innerHTML = '';
     for (var i = 0; i < hqStores.length; i++) {
       var label = document.createElement('label');
       var box = document.createElement('input');
       box.type = 'checkbox';
       box.value = hqStores[i];
+      box.addEventListener('change', hqOnStoreToggle);
       label.appendChild(box);
       label.appendChild(document.createTextNode(hqStores[i]));
       el.stores.appendChild(label);
@@ -3381,17 +3517,18 @@ function stopDashboard(){
    * One request through the EXISTING plumbing. kdSend adds the token, and on an
    * ambiguous refusal it re-asks whoami itself — so 'dead' here really means
    * the session is gone, and the way out is endSession and nothing else.
-   * Returns { ok } or { ok:false, text } with the text already in Chinese.
+   * Returns { ok } or { ok:false, text } with the text already in plain English.
    */
   async function hqSend(payload, dead) {
     var res = await window.kdSend(payload);
     if (res.verdict === 'ok') { return { ok: true, data: res.data }; }
     if (res.verdict === 'offline') {
-      return { ok: false, text: '连不上后台，这一次没有送出去。检查网络后再试。' };
+      return { ok: false, text: 'Could not reach the backend. Nothing was sent for this one. ' +
+                                'Check the network and try again.' };
     }
     if (res.verdict === 'season_ended' || res.verdict === 'dead') {
       dead.hit = true;
-      return { ok: false, text: '登录已经失效，请重新登录。' };
+      return { ok: false, text: 'Your session has expired. Please log in again.' };
     }
     // 'rejected' — the door refused and whoami says the session is still fine.
     var reason = (res.data && typeof res.data.reason === 'string') ? res.data.reason : null;
@@ -3418,7 +3555,7 @@ function stopDashboard(){
 
   /** The session died mid-loop: stop, say so once, and go out the one door. */
   function hqDie() {
-    hqLog('bad', '★ 登录已经失效，已经停下来了。请重新登录。');
+    hqLog('bad', '★ Your session has expired, so this has stopped. Please log in again.');
     window.endSession();
   }
 
@@ -3429,26 +3566,46 @@ function stopDashboard(){
   function hqAskConfirm() {
     var stores = hqTickedStores();
     var week = hqWeekDates();
-    var v = hqValues();
+    var rows = hqReadRows();
 
     if (stores.length === 0) { el.confirm.classList.remove('hidden');
-      el.confirm.textContent = '还没有勾选任何店铺。'; hqPendingPlan = null; return; }
+      el.confirm.textContent = 'No stores are ticked yet.'; hqPendingPlan = null; return; }
     if (week.length === 0) { el.confirm.classList.remove('hidden');
-      el.confirm.textContent = '还没有选开始日期。'; hqPendingPlan = null; return; }
+      el.confirm.textContent = 'No start date has been picked yet.'; hqPendingPlan = null; return; }
 
-    hqPendingPlan = { stores: stores, week: week, values: v };
+    // ★★ THE WHOLE WEEK IS REFUSED, NOT TRIMMED. A partial week published into a
+    //    live shop is worse than one nobody published: the days that landed look
+    //    settled and the ones that did not are invisible.
+    var bad = hqFirstBadBox(rows);
+    if (bad !== null) {
+      hqPendingPlan = null;
+      el.confirm.classList.remove('hidden');
+      el.confirm.textContent = 'Nothing was sent. ' + bad.text;
+      var box = grab(hqInputId(bad.index, bad.key));
+      if (box) { box.classList.add('bad'); box.focus(); }
+      return;
+    }
+    var cleared = el.dayRows.querySelectorAll('input.bad');
+    for (var c = 0; c < cleared.length; c++) { cleared[c].classList.remove('bad'); }
 
-    var html = '<b>请再看一次。按下面的「确定发布」才会真正写进去。</b><br><br>';
-    html += '店铺（' + stores.length + ' 间）：<br>　' + stores.join('<br>　') + '<br><br>';
-    html += '日期（7 天）：<br>';
-    for (var i = 0; i < week.length; i++) { html += '　' + hqDateInWords(week[i]) + '<br>'; }
-    html += '<br>每一天都写这六个数字：<br>';
-    html += '　T1 = ' + v.t1 + '　T2 = ' + v.t2 + '　T3 = ' + v.t3 + '<br>';
-    html += '　Bonus 1 = ' + v.bonus_1 + '　Bonus 2 = ' + v.bonus_2 +
-            '　Bonus 3 = ' + v.bonus_3 + '<br><br>';
-    html += '总共 ' + (stores.length * week.length) + ' 次写入。<br><br>';
-    html += '<button id="hqGoBtn">确定发布 Confirm</button> ' +
-            '<button id="hqCancelBtn" class="ghost">取消 Cancel</button>';
+    hqPendingPlan = { stores: stores, week: week, rows: rows };
+
+    var html = '<b>Read this back before it is written. Nothing has been sent yet — ' +
+               'only the Confirm button below sends.</b><br><br>';
+    html += 'Stores (' + stores.length + '):<br>&nbsp;&nbsp;' +
+            stores.join('<br>&nbsp;&nbsp;') + '<br><br>';
+    html += 'Days, each with its own six numbers:<br>';
+    for (var i = 0; i < week.length; i++) {
+      html += '&nbsp;&nbsp;<b>' + hqDateInWords(week[i]) + '</b><br>&nbsp;&nbsp;&nbsp;&nbsp;';
+      var parts = [];
+      for (var f = 0; f < HQ_FIELDS.length; f++) {
+        parts.push(HQ_FIELDS[f].label + ' = ' + rows[i][HQ_FIELDS[f].key]);
+      }
+      html += parts.join(' &nbsp; ') + '<br>';
+    }
+    html += '<br>' + (stores.length * week.length) + ' writes in total.<br><br>';
+    html += '<button id="hqGoBtn">Confirm and publish</button> ' +
+            '<button id="hqCancelBtn" class="ghost">Cancel</button>';
     el.confirm.innerHTML = html;
     el.confirm.classList.remove('hidden');
 
@@ -3464,7 +3621,8 @@ function stopDashboard(){
    * ★★ ONE REQUEST PER STORE PER DAY, STRICTLY SEQUENTIAL. Every send is
    *    awaited before the next begins — no Promise.all, no batch. Nineteen live
    *    files behind one script lock do not want 49 requests at once.
-   * ★★ A FAILURE NEVER STOPS THE LOOP. It is counted, printed in Chinese, and
+   * ★★ EACH DAY CARRIES ITS OWN SIX VALUES — plan.rows[d], never one shared set.
+   * ★★ A FAILURE NEVER STOPS THE LOOP. It is counted, printed in plain English, and
    *    the loop moves on; the totals at the end are what the operator acts on.
    *    The one exception is a dead session, which stops everything because
    *    every remaining request would fail identically.
@@ -3494,21 +3652,24 @@ function stopDashboard(){
     var unexplainedRun = 0;
     var stoppedEarly = false;
 
-    hqLog('', '开始发布：' + plan.stores.length + ' 间店 × 7 天 = ' + total + ' 次。');
+    hqLog('', 'Publishing: ' + plan.stores.length + ' store(s) × 7 days = ' + total + ' writes.');
 
     for (var s = 0; s < plan.stores.length && !dead.hit && !stoppedEarly; s++) {
       var store = plan.stores[s];
       hqLog('', '── ' + store + ' ──');
       for (var d = 0; d < plan.week.length && !dead.hit && !stoppedEarly; d++) {
         var date = plan.week[d];
-        hqLog('', '　' + date + '：正在送出…（' + (done + 1) + ' / ' + total + '）');
+        var label = hqDayLabel(date);
+        hqLog('', '  ' + label + ': sending… (' + (done + 1) + ' of ' + total + ')');
         var pendingLine = el.progress.lastChild;
 
+        // ★★ THIS DAY'S OWN ROW. plan.rows[d] is the six values typed on the
+        //    grid line labelled with this very date.
+        var row = plan.rows[d];
         var res = await hqSend({
           action: 'publishTargets', store: store, date: date,
-          t1: plan.values.t1, t2: plan.values.t2, t3: plan.values.t3,
-          bonus_1: plan.values.bonus_1, bonus_2: plan.values.bonus_2,
-          bonus_3: plan.values.bonus_3
+          t1: row.t1, t2: row.t2, t3: row.t3,
+          bonus_1: row.bonus_1, bonus_2: row.bonus_2, bonus_3: row.bonus_3
         }, dead);
 
         done++;
@@ -3516,16 +3677,16 @@ function stopDashboard(){
           okCount++;
           unexplainedRun = 0;
           pendingLine.className = 'ok';
-          pendingLine.textContent = '　' + date + '：OK（' + done + ' / ' + total + '）';
+          pendingLine.textContent = '  ' + label + ': OK (' + done + ' of ' + total + ')';
         } else {
           failCount++;
           // ★ Consecutive, not cumulative: a failure that names a reason is a
           //   normal, understood refusal and clears the run.
           if (res.unexplained === true) { unexplainedRun++; } else { unexplainedRun = 0; }
-          failures.push(store + ' ' + date + '：' + res.text);
+          failures.push(store + ' ' + date + ' — ' + res.text);
           pendingLine.className = 'bad';
-          pendingLine.textContent = '　' + date + '：失败 —— ' + res.text +
-                                    '（' + done + ' / ' + total + '）';
+          pendingLine.textContent = '  ' + label + ': FAILED — ' + res.text +
+                                    ' (' + done + ' of ' + total + ')';
           if (unexplainedRun >= HQ_UNEXPLAINED_LIMIT) { stoppedEarly = true; }
         }
       }
@@ -3533,21 +3694,23 @@ function stopDashboard(){
 
     hqLog('', '');
     if (stoppedEarly) {
-      hqLog('bad', '★ 已经提前停下来了：同一个说不出原因的错误连续出现 ' + HQ_UNEXPLAINED_LIMIT +
-                   ' 次。已经写好 ' + okCount + ' 天，还有 ' + (total - done) +
-                   ' 天完全没有做（另外 ' + failCount + ' 天失败）。这是故意停的 —— ' +
-                   '你还是登录着的，请先照上面说的去检查名单，再重新发布一次。');
+      hqLog('bad', '★ Stopped early on purpose: the same unexplained error came back ' +
+                   HQ_UNEXPLAINED_LIMIT + ' times in a row. ' + okCount + ' day(s) were ' +
+                   'written, ' + failCount + ' failed, and ' + (total - done) + ' were never ' +
+                   'attempted. You are still logged in — fix the store list as described ' +
+                   'above, then publish again.');
     }
     hqLog(failCount === 0 ? 'ok' : 'bad',
-          '完成：成功 ' + okCount + '，失败 ' + failCount + '，共 ' + done + ' / ' + total + '。');
-    for (var f = 0; f < failures.length; f++) { hqLog('bad', '　✗ ' + failures[f]); }
+          'Finished: ' + okCount + ' written, ' + failCount + ' failed, ' +
+          done + ' of ' + total + ' attempted.');
+    for (var f = 0; f < failures.length; f++) { hqLog('bad', '  ✗ ' + failures[f]); }
 
     el.publish.disabled = false;
     if (dead.hit) { hqDie(); }
   }
 
   // -------------------------------------------------------------------------
-  // Last week
+  // The week before — loads by itself, one request at a time
   // -------------------------------------------------------------------------
 
   /**
@@ -3559,53 +3722,105 @@ function stopDashboard(){
    */
   function hqCell(value) { return (typeof value === 'number') ? String(value) : '—'; }
 
-  async function hqLoadWeek() {
-    var stores = hqTickedStores();
-    if (stores.length === 0) { el.week.textContent = '请先勾选店铺。'; return; }
+  /**
+   * ★★ ONE AT A TIME, ALWAYS. Ticking four stores in two seconds queues four
+   *    requests and runs them one after another — never in parallel. `hqQueue`
+   *    holds the store names still to fetch and `hqQueueRunning` is the single
+   *    worker; a second tick while one is in flight only appends to the queue.
+   */
+  var hqQueue = [];
+  var hqQueueRunning = false;
+  var hqPanels = {};   // store name -> the HTML of its table, once fetched
 
-    var week = hqWeekDates();
-    var end, start;
-    if (week.length === 7) {
-      start = week[0]; end = week[6];
+  function hqOnStoreToggle(event) {
+    var name = event.target.value;
+    if (event.target.checked) {
+      hqQueue.push(name);
+      hqPanels[name] = '<table><caption>' + name + '</caption>' +
+                       '<tr><td>Loading…</td></tr></table>';
+      hqPaintPanels();
+      hqRunQueue();
     } else {
-      // No start date picked: the seven days up to and including today.
-      var today = new Date();
-      end = today.getFullYear() + '-' + hqPad(today.getMonth() + 1) + '-' + hqPad(today.getDate());
-      start = hqShift(end, -6);
+      // Unticked: the panel goes, and a queued fetch for it is dropped.
+      delete hqPanels[name];
+      var kept = [];
+      for (var i = 0; i < hqQueue.length; i++) {
+        if (hqQueue[i] !== name) { kept.push(hqQueue[i]); }
+      }
+      hqQueue = kept;
+      hqPaintPanels();
     }
+  }
 
-    el.week.textContent = '正在载入…';
-    el.weekBtn.disabled = true;
+  /** Panels are painted in the order the stores appear in the list, not in fetch order. */
+  function hqPaintPanels() {
     var html = '';
+    for (var i = 0; i < hqStores.length; i++) {
+      if (hqPanels[hqStores[i]]) { html += hqPanels[hqStores[i]]; }
+    }
+    el.week.innerHTML = (html === '') ? 'Tick a store to see its previous week.' : html;
+  }
+
+  async function hqRunQueue() {
+    if (hqQueueRunning) { return; }
+    hqQueueRunning = true;
     var dead = { hit: false };
 
-    for (var i = 0; i < stores.length && !dead.hit; i++) {
-      var res = await hqSend({ action: 'getStoreWeek', store: stores[i],
-                               start_date: start, end_date: end }, dead);
-      html += '<table><caption>' + stores[i] + '　' + start + ' 至 ' + end + '</caption>';
-      if (!res.ok) {
-        html += '<tr><td>' + res.text + '</td></tr></table>';
+    while (hqQueue.length > 0 && !dead.hit) {
+      var name = hqQueue.shift();
+      // Unticked while it waited: skip without spending a request.
+      if (!hqPanels[name]) { continue; }
+      var range = hqHistoryRange();
+      if (range === null) {
+        hqPanels[name] = '<table><caption>' + name + '</caption>' +
+                         '<tr><td>Pick a start date first.</td></tr></table>';
+        hqPaintPanels();
         continue;
       }
-      html += '<tr><th>日期</th><th>当日销售</th><th>T1</th><th>T2</th><th>T3</th>' +
-              '<th>Bonus 1</th><th>Bonus 2</th><th>Bonus 3</th></tr>';
-      var days = res.data.days || [];
-      if (days.length === 0) {
-        html += '<tr><td colspan="8">这段日子里没有任何一行。</td></tr>';
-      }
-      for (var d = 0; d < days.length; d++) {
-        var row = days[d];
-        html += '<tr><td>' + row.date + '</td><td>' + hqCell(row.daily_sales) + '</td>' +
-                '<td>' + hqCell(row.t1) + '</td><td>' + hqCell(row.t2) + '</td>' +
-                '<td>' + hqCell(row.t3) + '</td><td>' + hqCell(row.bonus_1) + '</td>' +
-                '<td>' + hqCell(row.bonus_2) + '</td><td>' + hqCell(row.bonus_3) + '</td></tr>';
-      }
-      html += '</table>';
+      var res = await hqSend({ action: 'getStoreWeek', store: name,
+                               start_date: range.start, end_date: range.end }, dead);
+      if (!hqPanels[name]) { continue; }   // unticked while in flight
+      hqPanels[name] = hqPanelHtml(name, range, res);
+      hqPaintPanels();
     }
 
-    el.week.innerHTML = html;
-    el.weekBtn.disabled = false;
+    hqQueueRunning = false;
     if (dead.hit) { hqDie(); }
+  }
+
+  function hqPanelHtml(name, range, res) {
+    var html = '<table><caption>' + name + ' — ' + hqDayLabel(range.start) + ' to ' +
+               hqDayLabel(range.end) + ' (' + range.start + ' … ' + range.end + ')</caption>';
+    if (!res.ok) { return html + '<tr><td>' + res.text + '</td></tr></table>'; }
+
+    html += '<tr><th>Day</th><th>Sales</th><th>T1</th><th>T2</th><th>T3</th>' +
+            '<th>Bonus 1</th><th>Bonus 2</th><th>Bonus 3</th></tr>';
+    var days = res.data.days || [];
+    if (days.length === 0) {
+      html += '<tr><td colspan="8">No rows at all in these seven days.</td></tr>';
+    }
+    for (var d = 0; d < days.length; d++) {
+      var row = days[d];
+      html += '<tr><td>' + hqDayLabel(row.date) + '</td><td>' + hqCell(row.daily_sales) + '</td>' +
+              '<td>' + hqCell(row.t1) + '</td><td>' + hqCell(row.t2) + '</td>' +
+              '<td>' + hqCell(row.t3) + '</td><td>' + hqCell(row.bonus_1) + '</td>' +
+              '<td>' + hqCell(row.bonus_2) + '</td><td>' + hqCell(row.bonus_3) + '</td></tr>';
+    }
+    return html + '</table>';
+  }
+
+  /** The start date moved: every panel on screen is now for the wrong week. */
+  function hqRefreshPanels() {
+    var ticked = hqTickedStores();
+    hqPanels = {};
+    hqQueue = [];
+    for (var i = 0; i < ticked.length; i++) {
+      hqPanels[ticked[i]] = '<table><caption>' + ticked[i] + '</caption>' +
+                            '<tr><td>Loading…</td></tr></table>';
+      hqQueue.push(ticked[i]);
+    }
+    hqPaintPanels();
+    hqRunQueue();
   }
 
   // -------------------------------------------------------------------------
@@ -3625,24 +3840,28 @@ function stopDashboard(){
   window.showHqView = function (store) {
     el.view = grab('hqView'); el.stores = grab('hqStoreList');
     el.start = grab('hqStartDate'); el.dates = grab('hqWeekDates');
-    el.t1 = grab('hqT1'); el.t2 = grab('hqT2'); el.t3 = grab('hqT3');
-    el.b1 = grab('hqB1'); el.b2 = grab('hqB2'); el.b3 = grab('hqB3');
+    el.dayRows = grab('hqDayRows');
     el.publish = grab('hqPublishBtn'); el.confirm = grab('hqConfirm');
     el.progress = grab('hqProgress'); el.week = grab('hqWeekPanel');
-    el.weekBtn = grab('hqWeekBtn');
 
     grab('hqWho').textContent = ' · ' + String(store);
     el.view.classList.remove('hidden');
 
+    // ★ The week defaults to TODAY through today + 6, in Asia/Kuala_Lumpur —
+    //   the same zone the backend stamps rows in, so "today" means one day.
+    if (el.start.value === '') { el.start.value = hqToday(); }
+
     if (!el.view.dataset.wired) {
       el.view.dataset.wired = '1';
-      el.start.addEventListener('change', hqRenderWeekDates);
+      el.start.addEventListener('change', function () {
+        hqRenderDayRows();
+        hqRefreshPanels();
+      });
       el.publish.addEventListener('click', hqAskConfirm);
-      el.weekBtn.addEventListener('click', hqLoadWeek);
       grab('hqLogoutBtn').addEventListener('click', function () { window.endSession(); });
     }
 
-    hqRenderWeekDates();
+    hqRenderDayRows();
     hqLoadStores();
   };
 })();
