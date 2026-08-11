@@ -298,47 +298,38 @@
   .stock-submitted-banner{background:var(--green-bg);border:1px solid var(--green-border);border-radius:10px;padding:14px 18px;font-family:'DM Mono',monospace;font-size:13px;color:var(--green);display:none;}
 
   /* ══════════════════════════════════
-     REORDER TAB
+     SUPPLY REQUEST TAB
+     ★ Replaced the PAR-based reorder page. That page was one shop's owner
+       reading his own PAR levels; with nineteen shops the reader of a reorder
+       list is HQ, and the shop end of it had nobody left looking at it.
   ══════════════════════════════════ */
-  .reorder-page{padding:20px;}
-  .reorder-header{margin-bottom:20px;}
-  .reorder-title{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;}
-  .reorder-subtitle{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:3px;}
-  .reorder-grid{display:flex;flex-direction:column;gap:10px;}
-  .reorder-card{display:flex;align-items:center;gap:14px;padding:14px 18px;border-radius:12px;border:1px solid;}
-  .reorder-card.urgent{background:var(--red-bg);border-color:var(--red-border);}
-  .reorder-card.low{background:var(--amber-bg);border-color:var(--amber-border);}
-  .reorder-card.ok{background:var(--green-bg);border-color:var(--green-border);}
-  .reorder-card.pending{background:var(--surface2);border-color:var(--border);}
-  .rc-icon{font-size:20px;flex-shrink:0;}
-  .rc-info{flex:1;min-width:0;}
-  .rc-name{font-weight:600;font-size:14px;}
-  .rc-sku{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-top:1px;}
-  .rc-right{text-align:right;flex-shrink:0;}
-  .rc-qty{font-family:'Playfair Display',serif;font-size:22px;font-weight:900;line-height:1;}
-  .rc-qty.urgent{color:var(--red);}
-  .rc-qty.low{color:var(--amber);}
-  .rc-qty.ok{color:var(--green);}
-  .rc-label{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:1px;color:var(--muted);margin-top:2px;}
-  .rc-actual{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:2px;}
-  .reorder-empty{text-align:center;padding:40px;font-family:'DM Mono',monospace;font-size:13px;color:var(--muted);}
-  .reorder-no-count{text-align:center;padding:40px;}
-  .reorder-no-count p{font-family:'DM Mono',monospace;font-size:13px;color:var(--muted);margin-bottom:12px;}
+  .sup-page{padding:20px;}
+  .sup-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+  .sup-title{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;}
+  .sup-subtitle{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:3px;}
+  .sup-grid{display:flex;flex-direction:column;gap:10px;}
+  .sup-card{display:flex;align-items:center;gap:14px;padding:14px 18px;border-radius:12px;border:1px solid var(--border);background:var(--surface2);}
+  .sup-card.filled{background:var(--green-bg);border-color:var(--green-border);}
+  .sup-info{flex:1;min-width:0;}
+  .sup-name{font-weight:600;font-size:14px;}
+  .sup-meta{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-top:1px;}
+  .sup-qty{width:88px;height:44px;flex-shrink:0;text-align:center;font-family:'DM Mono',monospace;font-size:17px;border:1.5px solid var(--border2);border-radius:10px;background:#fff;color:var(--text);}
+  .sup-qty:focus{outline:none;border-color:var(--blue);}
+  .sup-empty{text-align:center;padding:40px;font-family:'DM Mono',monospace;font-size:13px;color:var(--muted);}
+  .sup-footer{margin-top:20px;text-align:center;}
 
-  /* Summary bar */
-  .reorder-summary{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;}
-  .sum-chip{flex:1;min-width:80px;padding:12px 14px;border-radius:10px;text-align:center;border:1px solid;}
-  .sum-chip.urgent{background:var(--red-bg);border-color:var(--red-border);}
-  .sum-chip.low{background:var(--amber-bg);border-color:var(--amber-border);}
-  .sum-chip.ok{background:var(--green-bg);border-color:var(--green-border);}
-  .sum-chip .num{font-family:'Playfair Display',serif;font-size:28px;font-weight:900;}
-  .sum-chip.urgent .num{color:var(--red);}
-  .sum-chip.low .num{color:var(--amber);}
-  .sum-chip.ok .num{color:var(--green);}
-  .sum-chip .lbl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:2px;margin-top:2px;}
-  .sum-chip.urgent .lbl{color:var(--red);}
-  .sum-chip.low .lbl{color:var(--amber);}
-  .sum-chip.ok .lbl{color:var(--green);}
+  /* The three answers. ★ Every one of them draws — none of this page is silent. */
+  .sup-result{margin-top:18px;border-radius:12px;padding:14px 18px;border:1px solid;display:none;}
+  .sup-result.show{display:block;}
+  .sup-result.ok{background:var(--green-bg);border-color:var(--green-border);}
+  .sup-result.warn{background:var(--amber-bg);border-color:var(--amber-border);}
+  .sup-result.err{background:var(--red-bg);border-color:var(--red-border);}
+  .sup-result-head{font-weight:700;font-size:14px;line-height:1.5;}
+  .sup-result-sub{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;}
+  .sup-reject-list{margin-top:12px;}
+  .sup-reject{padding:9px 0;border-top:1px dashed var(--border2);}
+  .sup-reject-sku{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);}
+  .sup-reject-why{font-size:12.5px;line-height:1.55;margin-top:2px;}
 
   /* Shared modals & toasts */
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);padding:9px 22px;border-radius:8px;font-family:'DM Mono',monospace;font-size:13px;opacity:0;transition:all .22s;z-index:200;pointer-events:none;white-space:nowrap;color:#fff;}
@@ -660,7 +651,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build edf6aab — this is the published build; edf6aab is the commit this copy of the page was published from">edf6aab</span>
+    <span class="build-tag" id="buildTag" title="build dev — unpublished copy; the published build carries its own hash">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -669,7 +660,7 @@
 <div class="tabbar">
   <button class="tab-btn active" onclick="switchTab('sales',this)">📊 Sales</button>
   <button class="tab-btn" onclick="switchTab('stock',this)">📦 Stock Count</button>
-  <button class="tab-btn" onclick="switchTab('reorder',this)">🔔 補貨需求</button>
+  <button class="tab-btn" onclick="switchTab('supply',this)">🧾 包材請求</button>
 </div>
 
 <!-- ════════ TAB: SALES ════════ -->
@@ -846,20 +837,36 @@
   </div>
 </div>
 
-<!-- ════════ TAB: 補貨需求 ════════ -->
-<div class="tab-panel" id="tab-reorder">
-  <div class="reorder-page">
-    <div class="reorder-header">
-      <div class="reorder-title">🔔 Reorder Requirements</div>
-      <div class="reorder-subtitle" id="reorderSubtitle">Based on last stock count</div>
-    </div>
-    <div class="reorder-summary" id="reorderSummary"></div>
-    <div class="reorder-grid" id="reorderGrid">
-      <div class="reorder-no-count">
-        <p>No stock count submitted yet today.</p>
-        <button class="submit-stock-btn" onclick="switchTab('stock',this)" style="background:var(--blue)">Go to Stock Count →</button>
+<!-- ════════ TAB: 包材請求 ════════ -->
+<div class="tab-panel" id="tab-supply">
+  <div class="sup-page">
+    <div class="sup-header">
+      <div>
+        <div class="sup-title">🧾 Packing Supplies Request</div>
+        <div class="sup-subtitle" id="supSubtitle">Loading…</div>
+      </div>
+      <!-- ★ KD-041. The same roster the rest of the page uses, filled by
+           renderEmps — not a second list of who works here. -->
+      <div class="stock-emp-row">
+        <span class="stock-emp-label">REQUESTED BY</span>
+        <select class="stock-emp-select" id="supEmpSelect">
+          <option value="">Select Employee</option>
+        </select>
       </div>
     </div>
+    <div class="sup-grid" id="supGrid">
+      <div class="sup-empty">Loading items…</div>
+    </div>
+    <div class="sup-footer">
+      <button class="submit-stock-btn" id="supSubmitBtn" onclick="submitSupplyRequest()">Send Request</button>
+      <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5;">
+        Leave a box empty for anything you do not need — whole numbers only.<br>
+        <span style="font-size:10px;">不需要的留空即可，数量只填整数。</span>
+      </div>
+    </div>
+    <!-- ★★ Where all three answers land: how many went, and every line that
+         did not, in words. Nothing about a send is left to a toast alone. -->
+    <div class="sup-result" id="supResult"></div>
   </div>
 </div>
 
@@ -1534,7 +1541,7 @@ function switchTab(name,btn){
   document.getElementById("tab-"+name).classList.add("active");
   if(btn) btn.classList.add("active");
   if(name==="stock") loadStockTab();
-  if(name==="reorder") loadReorderTab();
+  if(name==="supply") loadSupplyTab();
 }
 
 // ★ jsonpFetch is GONE. It was a GET with a callback= parameter, and the
@@ -1758,10 +1765,15 @@ var selectedAction = null; // 'clock','FOC','Sample','Faulty'
 function renderEmps(roster){
   var g=document.getElementById("empGrid"); g.innerHTML="";
   var sel=document.getElementById("stockEmpSelect");
+  // ★ The supply-request page hangs off the SAME roster (KD-041) rather than
+  //   asking the server for a second list of who works here.
+  var supSel=document.getElementById("supEmpSelect");
   // ★ A 5-minute sync must not silently clear a name somebody already picked
-  //   half way through a count.
+  //   half way through a count — or half way through filling in a request.
   var keepStock=sel.value;
+  var keepSup=supSel?supSel.value:"";
   while(sel.options.length>1) sel.remove(1);
+  if(supSel){ while(supSel.options.length>1) supSel.remove(1); }
   var emps=(roster||[]).map(function(r){ return r.employee; });
   if(!emps.length){g.innerHTML="<div style=\"font-size:12px;color:var(--muted)\">No employees</div>";return;}
   for(var i=0;i<emps.length;i++){
@@ -1787,9 +1799,14 @@ function renderEmps(roster){
       g.appendChild(b);
       var opt=document.createElement("option"); opt.value=name; opt.textContent=name;
       sel.appendChild(opt);
+      if(supSel){
+        var supOpt=document.createElement("option"); supOpt.value=name; supOpt.textContent=name;
+        supSel.appendChild(supOpt);
+      }
     })(emps[i]);
   }
   if(keepStock && emps.indexOf(keepStock)!==-1){ sel.value=keepStock; }
+  if(supSel && keepSup && emps.indexOf(keepSup)!==-1){ supSel.value=keepSup; }
   // ★ Redraw wipes the .sel highlight, so put it back on whoever is selected.
   if(selectedStaff && emps.indexOf(selectedStaff)!==-1){
     var btns=g.querySelectorAll(".emp-btn");
@@ -2147,57 +2164,231 @@ async function autoCompleteStockTask(){
   fetchSheets(true);
 }
 
-// ── Reorder Tab ────────────────────────────────────────────
-async function loadReorderTab(){
-  // ★ Same cache rule as before: only fetch when there is nothing fresh.
-  if(!stockData){
-    var res=await kdSend({action:"getStock"});
-    if(res.verdict!=="ok"){ kdFail(res,"Loading the reorder list"); return; }
-    stockData=res.data;
-  }
-  var products=stockData.items||[];
-  var date=stockData.date||"";
-  document.getElementById("reorderSubtitle").textContent="Based on stock count · "+date;
+// ── Supply Request Tab ─────────────────────────────────────
+//
+// ★★ THIS REPLACED THE PAR-BASED REORDER PAGE. That page computed a mooncake
+//    shortfall from PAR and today's closing count. It made sense when one owner
+//    was reading his own shop's numbers; with nineteen shops the person who
+//    decides what gets sent is HQ, and at the shop end nobody was reading it.
+//    What the shop actually needs to do here is ASK for the boxes, bags and tape
+//    (KD-017) — and asking is the one thing the old page could not do.
+//
+// ★ Naming stays clear of the word the CATEGORY cell already uses (KW-050):
+//   these are `sup*` items on screen, never a variable claiming to be the
+//   category itself.
+var supItems=null;
 
-  var urgent=[],low=[],ok=[];
-  products.forEach(function(p){
-    // ★ submitted_by is the PER-SKU answer (src/Api.js:2883); the page-level
-    //   `submitted` boolean says nothing about this particular line.
-    if(p.closing_cd===null&&!p.submitted_by) return;
-    var n=p.closing_cd!==null?Number(p.closing_cd):0, par=p.par, short=par-n;
-    if(n>=par) ok.push(p);
-    else if(n>=par*0.5) low.push({p:p,short:short});
-    else urgent.push({p:p,short:short});
-  });
+/**
+ * The whole page. getPackaging decides what may be asked for — this file does
+ * not, and must not: a second opinion here would draw a line submitPackaging
+ * then refuses, with the promoter having done nothing wrong.
+ */
+async function loadSupplyTab(){
+  var grid=document.getElementById("supGrid");
+  supSay();
+  grid.innerHTML='<div class="sup-empty">Loading items…</div>';
 
-  // Summary chips
-  var sum=document.getElementById("reorderSummary");
-  sum.innerHTML='<div class="sum-chip urgent"><div class="num">'+urgent.length+'</div><div class="lbl">URGENT</div></div>'
-    +'<div class="sum-chip low"><div class="num">'+low.length+'</div><div class="lbl">LOW</div></div>'
-    +'<div class="sum-chip ok"><div class="num">'+ok.length+'</div><div class="lbl">SUFFICIENT</div></div>';
-
-  var grid=document.getElementById("reorderGrid");
-  if(!stockData.submitted && products.every(function(p){return p.closing_cd===null;})){
-    grid.innerHTML='<div class="reorder-no-count"><p>No stock count submitted yet today.</p><button class="submit-stock-btn" onclick="switchTab(\'stock\')" style="background:var(--blue)">Go to Stock Count →</button></div>';
+  var res=await kdSend({action:"getPackaging"});
+  if(res.verdict!=="ok"){
+    grid.innerHTML='<div class="sup-empty">Could not load the list. NOTHING was sent.</div>';
+    kdFail(res,"Loading the supplies list");
     return;
   }
-  if(urgent.length===0&&low.length===0&&ok.length===0){
-    grid.innerHTML='<div class="reorder-empty">No stock count data yet for today.</div>';
+
+  supItems=res.data.items||[];
+  document.getElementById("supSubtitle").textContent=
+    (res.data.store||"")+" · "+supItems.length+" items";
+
+  // ★★ (c) unclassified[] IS NOT SHOWN TO THE PROMOTER — he cannot fix a
+  //    CATEGORY cell in HQ MASTER and it is not his mistake. It goes to the
+  //    console so the SKUs are findable later: each name here is an item that
+  //    is silently missing from the list above, and a missing line is exactly
+  //    what nobody can notice by looking.
+  var unclassified=res.data.unclassified||[];
+  if(unclassified.length){
+    console.warn("[supply] "+unclassified.length+" SKU(s) are missing from this page "+
+                 "because their PRODUCTS CATEGORY cell is blank or misspelt: "+
+                 unclassified.join(", "));
+  }
+
+  if(!supItems.length){
+    grid.innerHTML='<div class="sup-empty">No packing supplies are set up for this shop yet.</div>';
     return;
   }
 
   var html="";
-  urgent.forEach(function(item){
-    html+='<div class="reorder-card urgent"><div class="rc-icon">🔴</div><div class="rc-info"><div class="rc-name">'+item.p.name+'</div><div class="rc-sku">'+item.p.sku+' · '+item.p.unit+'</div></div><div class="rc-right"><div class="rc-qty urgent">+'+item.short+'</div><div class="rc-label">TO REORDER</div><div class="rc-actual">Have: '+(item.p.closing_cd!==null?item.p.closing_cd:0)+' / PAR: '+item.p.par+'</div></div></div>';
-  });
-  low.forEach(function(item){
-    html+='<div class="reorder-card low"><div class="rc-icon">⚠️</div><div class="rc-info"><div class="rc-name">'+item.p.name+'</div><div class="rc-sku">'+item.p.sku+' · '+item.p.unit+'</div></div><div class="rc-right"><div class="rc-qty low">+'+item.short+'</div><div class="rc-label">TO REORDER</div><div class="rc-actual">Have: '+(item.p.closing_cd!==null?item.p.closing_cd:0)+' / PAR: '+item.p.par+'</div></div></div>';
-  });
-  ok.forEach(function(item){
-    html+='<div class="reorder-card ok"><div class="rc-icon">✅</div><div class="rc-info"><div class="rc-name">'+item.name+'</div><div class="rc-sku">'+item.sku+' · '+item.unit+'</div></div><div class="rc-right"><div class="rc-qty ok">'+(item.closing_cd!==null?item.closing_cd:"—")+'</div><div class="rc-label">IN STOCK</div><div class="rc-actual">PAR: '+item.par+'</div></div></div>';
-  });
+  for(var i=0;i<supItems.length;i++){
+    var it=supItems[i];
+    // ★ Escaped: product names come out of a sheet somebody types by hand
+    //   (feedEscape's reasoning at the activity feed).
+    html+='<div class="sup-card" id="supCard-'+i+'">'
+        +   '<div class="sup-info">'
+        +     '<div class="sup-name">'+feedEscape(it.product||it.sku)+'</div>'
+        +     '<div class="sup-meta">'+feedEscape(it.sku)+' · '+feedEscape(it.unit||"")+'</div>'
+        +   '</div>'
+        +   '<input class="sup-qty" id="supQty-'+i+'" type="number" inputmode="numeric" '
+        +     'min="1" step="1" placeholder="—" oninput="supQtyChanged('+i+')">'
+        + '</div>';
+  }
   grid.innerHTML=html;
 }
+
+/** Paint the card as soon as it carries a number, so a filled line is obvious. */
+function supQtyChanged(i){
+  var box=document.getElementById("supQty-"+i);
+  var card=document.getElementById("supCard-"+i);
+  if(!box||!card) return;
+  card.classList.toggle("filled", box.value.trim()!=="");
+}
+
+/**
+ * The lines to send.
+ *
+ * ★★ AN EMPTY BOX IS NOT A LINE, AND IS NEVER SENT AS 0. "I do not need this"
+ *    and "send me zero of these" would arrive at the sheet as the same row, and
+ *    the backend refuses a 0 anyway — so an empty box sent as 0 would come back
+ *    as a rejection for something the promoter never asked for.
+ * ★ Anything typed that is not a whole number of one or more is held back HERE
+ *   with the same words the server would use. The server still checks; this only
+ *   saves a round trip and points at the box.
+ */
+function supLines(){
+  var out={ lines:[], bad:[] };
+  if(!supItems) return out;
+  for(var i=0;i<supItems.length;i++){
+    var box=document.getElementById("supQty-"+i);
+    if(!box) continue;
+    var raw=box.value.trim();
+    if(raw===""){ continue; }
+    var n=Number(raw);
+    if(!isFinite(n)||n<=0||Math.floor(n)!==n){
+      out.bad.push({ sku:supItems[i].sku, product:supItems[i].product,
+                     why:"Quantity must be a whole number of one or more. "+
+                         "Half a box cannot be sent." });
+      continue;
+    }
+    out.lines.push({ sku:supItems[i].sku, qty:n });
+  }
+  return out;
+}
+
+async function submitSupplyRequest(){
+  var emp=document.getElementById("supEmpSelect").value;
+  if(!emp){ showToast("Please select employee","err"); return; }
+
+  var picked=supLines();
+  if(picked.bad.length){
+    supDrawRejections("err","Nothing was sent.",
+      "Fix the "+picked.bad.length+" line(s) below and send again.", picked.bad);
+    return;
+  }
+  if(!picked.lines.length){
+    supDrawRejections("warn","Nothing was sent.",
+      "No quantities were filled in. Type how many you need beside an item first.", []);
+    return;
+  }
+
+  // ★★ LOCKED WHILE IT IS IN FLIGHT. Two taps is two batches, and the second
+  //    one is invisible until somebody reads the sheet.
+  var btn=document.getElementById("supSubmitBtn");
+  btn.disabled=true; btn.textContent="Sending…";
+  supSay();
+
+  var res=await kdSend({action:"submitPackaging", employee:emp, lines:picked.lines});
+
+  btn.disabled=false; btn.textContent="Send Request";
+
+  // ★★ A REFUSAL IS DRAWN, NOT SWALLOWED. The backend hands back a reason in
+  //    words and, when it has them, the individual lines — both go on screen.
+  // ★ Only 'rejected' means "the door was open and the CONTENT was refused"
+  //   (kdSend's own vocabulary, :1472-1473). A dead session or an offline tablet
+  //   must go to kdFail — drawing a content refusal over either of those would
+  //   tell the promoter to fix his numbers when the real answer is "log in
+  //   again" or "you have no network and NOTHING was sent".
+  if(res.verdict!=="ok"){
+    if(res.verdict==="rejected" && res.data && res.data.message){
+      supDrawRejections("err","Nothing was sent.", res.data.message,
+                        supRejects(res.data.rejected));
+    } else {
+      kdFail(res,"Sending the supplies request");
+    }
+    return;
+  }
+
+  // ★★ (b) HOW MANY WENT, IN WORDS AND AS A NUMBER. Not a green tick.
+  var written=res.data.written||0;
+  var refused=supRejects(res.data.rejected);
+  var head=(written===1)?"Sent 1 item to HQ."
+                        :("Sent "+written+" items to HQ.");
+  var sub=res.data.employee+" · "+res.data.date_time;
+
+  if(refused.length){
+    // ★★ (a) A PARTIAL SEND SAYS SO. The dangerous outcome here is a promoter
+    //    walking away believing a line went when it did not, so the refused
+    //    lines are listed one by one with the server's own words.
+    supDrawRejections("warn", head+" "+refused.length+" line(s) did NOT go.", sub, refused);
+  } else {
+    supDrawRejections("ok", head, sub, []);
+  }
+
+  // ★ The boxes are cleared only for what actually landed, so a refused line
+  //   stays on screen with its number in it and can be corrected and re-sent.
+  for(var i=0;i<supItems.length;i++){
+    var stillBad=false;
+    for(var r=0;r<refused.length;r++){
+      if(refused[r].sku===supItems[i].sku){ stillBad=true; break; }
+    }
+    if(stillBad) continue;
+    var box=document.getElementById("supQty-"+i);
+    if(box && box.value.trim()!==""){ box.value=""; supQtyChanged(i); }
+  }
+}
+
+/** The server's rejected[] as { sku, product, why }, with the local name added. */
+function supRejects(rejected){
+  var out=[];
+  var list=rejected||[];
+  for(var i=0;i<list.length;i++){
+    var sku=list[i].sku||"";
+    var product="";
+    for(var j=0;supItems&&j<supItems.length;j++){
+      if(supItems[j].sku===sku){ product=supItems[j].product; break; }
+    }
+    out.push({ sku:sku, product:product,
+               // ★ The server's own sentence. This page does not translate a
+               //   reason code into words of its own — two vocabularies for one
+               //   refusal is how the screen and the sheet start disagreeing.
+               why:list[i].message||list[i].reason||"Refused." });
+  }
+  return out;
+}
+
+/** The one result panel. `kind` is ok / warn / err; an empty head hides it. */
+function supDrawRejections(kind, head, sub, rejects){
+  var el=document.getElementById("supResult");
+  if(!el) return;
+  if(!head){ el.className="sup-result"; el.innerHTML=""; return; }
+
+  var html='<div class="sup-result-head">'+feedEscape(head)+'</div>';
+  if(sub){ html+='<div class="sup-result-sub">'+feedEscape(sub)+'</div>'; }
+  if(rejects && rejects.length){
+    html+='<div class="sup-reject-list">';
+    for(var i=0;i<rejects.length;i++){
+      var label=rejects[i].product?(rejects[i].product+" · "+rejects[i].sku)
+                                  :(rejects[i].sku||"(no item)");
+      html+='<div class="sup-reject">'
+          +   '<div class="sup-reject-sku">'+feedEscape(label)+'</div>'
+          +   '<div class="sup-reject-why">'+feedEscape(rejects[i].why)+'</div>'
+          + '</div>';
+    }
+    html+='</div>';
+  }
+  el.innerHTML=html;
+  el.className="sup-result show "+kind;
+}
+
+/** Clear the result panel. */
+function supSay(){ supDrawRejections("", "", "", []); }
 
 // ── Sales Update ───────────────────────────────────────────
 function openUpdateModal(){
