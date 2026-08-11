@@ -651,7 +651,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build d7f5a8b — this is the published build; d7f5a8b is the commit this copy of the page was published from">d7f5a8b</span>
+    <span class="build-tag" id="buildTag" title="build dev — unpublished copy; the published build carries its own hash">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -2224,7 +2224,7 @@ async function loadSupplyTab(){
     html+='<div class="sup-card" id="supCard-'+i+'">'
         +   '<div class="sup-info">'
         +     '<div class="sup-name">'+feedEscape(it.product||it.sku)+'</div>'
-        +     '<div class="sup-meta">'+feedEscape(it.sku)+' · '+feedEscape(it.unit||"")+'</div>'
+        +     '<div class="sup-meta">'+feedEscape(it.sku)+(it.unit?' · '+feedEscape(it.unit):'')+'</div>'
         +   '</div>'
         +   '<input class="sup-qty" id="supQty-'+i+'" type="number" inputmode="numeric" '
         +     'min="1" step="1" placeholder="—" oninput="supQtyChanged('+i+')">'
