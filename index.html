@@ -651,7 +651,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 6eca8c6 — unpublished copy; the published build carries its own hash">6eca8c6</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -1155,6 +1155,18 @@
       //   spend quota on a request with nothing to fetch. The interval and the
       //   behaviour for store users are untouched.
       window.showHqView(store);
+      // ★★★ 'hq' HERE IS A PLACEHOLDER FOR A LIST, NOT THE FINAL RULE.
+      //     The DO desk below is for whoever cuts the delivery orders, and that
+      //     is going to be its own reserved STORES row (FACTORY) once KD-055's
+      //     list holds a second name. That row does not exist yet, so there is
+      //     no role but 'hq' that can reach this screen today. ★ WHEN IT DOES:
+      //     this condition becomes "is the session's store one of the reserved
+      //     names, and which one" — decided by the SERVER and read here, never
+      //     asserted by the page (src/Api.js apiRoleForStore_). Until then the
+      //     supply view is additive to the HQ screen and takes nothing away.
+      // ★ startDashboard() / startAutoSync() are NOT called here either, for
+      //   the reason stated four lines up.
+      if (typeof window.showSupplyView === 'function') { window.showSupplyView(store); }
       return;
     }
     loginView.classList.add('hidden');
@@ -4255,6 +4267,457 @@ function stopDashboard(){
 
     hqRenderDayRows();
     hqLoadStores();
+  };
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     THE SUPPLY VIEW — the DO desk. Additive, and a SIBLING of #sessionView and
+     #hqView, never inside either. Not one line of those two is touched.
+     ★★ READ ONLY, AND IT HAS NO WRITE PATH AT ALL. It calls exactly two
+        actions, both of which write nothing anywhere: listStores and
+        getStoreSupply. There is no tick box, no export, no print, no DO
+        number and no QR in here on purpose — this cut is the LOOKING half.
+     ★ Every request goes through kdSend(), the existing plumbing. The door's
+       address is not named in here and there is no second network call.
+     ════════════════════════════════════════════════════════════════════════ -->
+<style>
+#supplyView .sup-wrap{max-width:1000px;margin:0 auto;padding:12px}
+/* ★ display:block is load-bearing, not tidiness. The dashboard owns a global
+   .sup-card at :311 (display:flex;align-items:center;gap:14px) for its restock
+   rows, and this screen reused the class name — so without this every section
+   here becomes one flex ROW and the hint text is squeezed to one word a line.
+   Only display is neutralised: align-items and gap have no effect in block
+   layout, and :311 must stay untouched — #tab-supply still renders through it. */
+#supplyView .sup-card{display:block;border:1px solid #d8d8d8;border-radius:10px;padding:14px;margin:12px 0;background:#fff}
+#supplyView .sup-card h2{margin:0 0 6px;font-size:17px}
+#supplyView .sup-hint{margin:0 0 10px;color:#666;font-size:13px;line-height:1.5}
+#supplyView .sup-note{margin:0 0 10px;padding:9px 11px;border-left:4px solid #b8860b;
+  background:#fffaf0;color:#5c4708;font-size:13px;line-height:1.5;border-radius:0 6px 6px 0}
+#supplyView .sup-progress{margin-top:10px;font-size:13px;line-height:1.7;max-height:320px;overflow:auto}
+#supplyView .sup-progress .ok{color:#1e7e34}
+#supplyView .sup-progress .bad{color:#c0392b}
+#supplyView .sup-fail{margin-top:12px;padding:11px;border:2px solid #c0392b;border-radius:8px;
+  background:#fff6f5;font-size:13px;line-height:1.6}
+#supplyView .sup-fail b{color:#c0392b}
+#supplyView select{padding:9px;font-size:15px;border:1px solid #ccc;border-radius:8px;
+  min-width:240px;max-width:100%;background:#fff}
+#supplyView .sup-tabs{display:flex;gap:8px;margin:12px 0}
+#supplyView .sup-tabs button.on{background:#222;color:#fff}
+#supplyView .sup-facts{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;
+  color:#444;margin:0 0 10px;line-height:1.7}
+#supplyView .sup-facts b{color:#111}
+#supplyView .sup-age{display:inline-block;padding:2px 9px;border-radius:999px;
+  font-weight:700;font-size:12px;letter-spacing:.3px}
+#supplyView .sup-age.fresh{background:#e8f5ec;color:#1e7e34;border:1px solid #b7dfc4}
+#supplyView .sup-age.stale{background:#c0392b;color:#fff;border:1px solid #a33226}
+#supplyView .sup-missing{padding:11px;border:2px dashed #c0392b;border-radius:8px;
+  background:#fff6f5;color:#8c2b20;font-size:13px;line-height:1.6;font-weight:600}
+#supplyView .sup-none{padding:11px;border:1px solid #ddd;border-radius:8px;background:#fafafa;
+  color:#666;font-size:13px;line-height:1.6}
+#supplyView .sup-table{overflow-x:auto;margin-top:10px}
+#supplyView .sup-table table{border-collapse:collapse;width:100%;font-size:13px}
+#supplyView .sup-table th,#supplyView .sup-table td{border:1px solid #e0e0e0;padding:6px 8px;
+  text-align:right;white-space:nowrap}
+#supplyView .sup-table th{background:#f6f6f6;font-weight:600;font-size:12px;color:#555}
+#supplyView .sup-table th:first-child,#supplyView .sup-table td:first-child,
+#supplyView .sup-table th:nth-child(2),#supplyView .sup-table td:nth-child(2){text-align:left}
+/* ★ width:100% on the ONE wrapping column is what keeps the number columns
+   beside the data instead of at the far edge. The table is width:100% (:4319)
+   and every other cell is nowrap, so all the slack has to land somewhere —
+   without this it is split evenly and Closing_CD / PAR_Level / Reorder end up
+   a hand's width from the product they describe. min-width still stops the
+   product name shredding when the table is narrower than the text. */
+#supplyView .sup-table td.wrap{white-space:normal;text-align:left;min-width:160px;width:100%}
+</style>
+
+<div id="supplyView" class="hidden">
+  <div class="sup-wrap">
+    <section class="sup-card">
+      <h2>Supply · DO desk<span id="supWho"></span></h2>
+      <p class="sup-hint">Reads every store's most recent stock count and the packaging
+        it has asked for in the last 14 days. Nothing here writes anything, anywhere —
+        this screen only looks.</p>
+      <button id="supLoadBtn">Load all stores</button>
+      <div id="supProgress" class="sup-progress"></div>
+      <div id="supFailures"></div>
+    </section>
+
+    <section id="supBrowse" class="sup-card hidden">
+      <h2>Browse</h2>
+      <p class="sup-hint">Everything below is already on this device. Switching store or
+        tab sends nothing — reload above when you want fresher figures.</p>
+      <select id="supStoreSel"></select>
+      <div class="sup-tabs">
+        <button id="supStockBtn" class="on">Stock</button>
+        <button id="supPackBtn" class="ghost">Packaging</button>
+      </div>
+      <div id="supPanel"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ★ The look-back, in days, counting today as day one. The backend refuses
+  //   anything over its own ceiling with range_too_long; 14 is well inside it.
+  var SUP_DAYS = 14;
+
+  // ★★ A COUNT OLDER THAN THIS IS SHOUTED ABOUT. 0 days is "counted today",
+  //    1 is "counted last night" — both normal, because a promoter counts at
+  //    closing and the DO is cut in the morning. 2 or more means that shop
+  //    did not count, and nineteen rows of small grey dates is exactly where
+  //    that gets read past. It is the one thing on this screen that must be
+  //    impossible to miss.
+  var SUP_STALE_DAYS = 2;
+
+  var el = {};
+  var supStores = [];      // every name listStores gave back
+  var supData = {};        // store name -> the getStoreSupply reply, as it came
+  var supFailures = [];    // { store, reason, text } — one entry per shop that did not load
+  var supTab = 'stock';
+  var supBusy = false;
+
+  function grab(id) { return document.getElementById(id); }
+
+  /** Sheet text into HTML text. Every cell on this screen goes through it. */
+  function supEsc(v) {
+    return String((v === null || v === undefined) ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** A cell that is empty prints as an em dash, not as nothing. */
+  function supCell(v) {
+    if (v === null || v === undefined || v === '') { return '&mdash;'; }
+    return supEsc(v);
+  }
+
+  function supLog(cssClass, text) {
+    var line = document.createElement('div');
+    if (cssClass) { line.className = cssClass; }
+    line.textContent = text;
+    el.progress.appendChild(line);
+    el.progress.scrollTop = el.progress.scrollHeight;
+  }
+
+  /**
+   * One request through the EXISTING plumbing, the shape hqSend already uses.
+   * Returns { ok:true, data } or { ok:false, text, reason, dead }.
+   * ★ `reason` is carried out raw as well as in plain English, because the
+   *   failure list must be able to say WHICH refusal it was per store.
+   */
+  async function supSend(payload) {
+    var res = await window.kdSend(payload);
+    if (res.verdict === 'ok') { return { ok: true, data: res.data }; }
+    if (res.verdict === 'offline') {
+      return { ok: false, text: 'could not reach the backend', reason: null };
+    }
+    if (res.verdict === 'season_ended' || res.verdict === 'dead') {
+      return { ok: false, text: 'the session has expired', reason: null, dead: true };
+    }
+    var reason = (res.data && typeof res.data.reason === 'string') ? res.data.reason : null;
+    // ★★ NO reason IS ITSELF INFORMATION AND IS PRINTED AS SUCH. kdSend has
+    //    already re-asked whoami, so the token is alive; a bare refusal is the
+    //    backend's outer catch turning a server-side throw into the uniform
+    //    failure. Showing it as "refused, no reason given" is the honest
+    //    reading — quietly dropping the shop from the list is the one thing
+    //    this screen must never do (KD-069).
+    if (reason === null) { return { ok: false, text: 'refused without saying why', reason: null }; }
+    return { ok: false, text: supReasonText(reason), reason: reason };
+  }
+
+  /** The closed vocabulary in plain English (src/Api.js apiPublishRefusal_). */
+  function supReasonText(reason) {
+    if (reason === 'target_is_hq') {
+      return 'that name is a reserved login row, not a shop';
+    }
+    if (reason === 'store_not_resolvable') {
+      return 'STORES has no usable SPREADSHEET_ID for that name';
+    }
+    if (reason === 'range_too_long') {
+      return 'the look-back asked for is longer than the backend allows';
+    }
+    return 'refused: ' + reason;
+  }
+
+  // -------------------------------------------------------------------------
+  // Loading — one store at a time, and one failure never takes the rest
+  // -------------------------------------------------------------------------
+
+  /**
+   * ★★★ SEQUENTIAL, ONE STORE PER REQUEST, AND THAT IS NOT A PERFORMANCE
+   *     CHOICE. getStoreSupply refuses a `stores` or `all_stores` field
+   *     outright (src/Api.js), and those two refusals exist to keep the blast
+   *     radius of one mistyped request at one shop. This loop is the client
+   *     side of that same rule.
+   * ★★★ A SHOP THAT FAILS IS RECORDED AND THE LOOP CARRIES ON. Nineteen shops
+   *     of which seventeen loaded is a usable morning; nineteen shops of which
+   *     none loaded because the fourth had no STOCKS tab is not. Every failure
+   *     is listed by name with what the backend said, because "thought it was
+   *     there and it was not" is the failure that gets stock sent to the wrong
+   *     shop (KD-069).
+   */
+  async function supLoadAll() {
+    if (supBusy) { return; }
+    supBusy = true;
+    el.load.disabled = true;
+    el.progress.innerHTML = '';
+    el.failures.innerHTML = '';
+    supStores = [];
+    supData = {};
+    supFailures = [];
+    el.browse.classList.add('hidden');
+
+    supLog('', 'Asking for the store list…');
+    var list = await supSend({ action: 'listStores' });
+    if (!list.ok) {
+      supLog('bad', 'The store list did not load — ' + list.text + '. Nothing was fetched.');
+      supBusy = false;
+      el.load.disabled = false;
+      return;
+    }
+
+    supStores = list.data.stores || [];
+    var total = supStores.length;
+    supLog('ok', 'Store list: ' + total + ' shops.');
+    if (total === 0) {
+      supLog('bad', 'The list came back empty. Nothing to fetch.');
+      supBusy = false;
+      el.load.disabled = false;
+      return;
+    }
+
+    var loaded = 0;
+    for (var i = 0; i < total; i++) {
+      var name = supStores[i];
+      supLog('', 'Store ' + (i + 1) + ' of ' + total + ' — ' + name + '…');
+
+      var res = await supSend({ action: 'getStoreSupply', store: name, days: SUP_DAYS });
+      if (res.ok) {
+        supData[name] = res.data;
+        loaded++;
+        supLog('ok', '  ' + name + ' — loaded.');
+        continue;
+      }
+
+      supFailures.push({ store: name, reason: res.reason, text: res.text });
+      supLog('bad', '  ' + name + ' — FAILED: ' + res.text);
+
+      // ★ A dead session is not one shop's problem: every remaining request
+      //   would fail the same way. The loop stops and SAYS how far it got,
+      //   rather than printing eighteen identical failures.
+      if (res.dead === true) {
+        supLog('bad', 'Stopped after ' + (i + 1) + ' of ' + total +
+                      ' — the session has expired. Log out and back in, then reload.');
+        break;
+      }
+    }
+
+    supLog('', 'Done. ' + loaded + ' of ' + total + ' loaded, ' +
+               supFailures.length + ' failed.');
+    supPaintFailures();
+
+    if (loaded > 0) {
+      supFillStoreList();
+      el.browse.classList.remove('hidden');
+      supPaintPanel();
+    }
+    supBusy = false;
+    el.load.disabled = false;
+  }
+
+  /** Every shop that did not load, by name, with what the backend said. */
+  function supPaintFailures() {
+    if (supFailures.length === 0) { el.failures.innerHTML = ''; return; }
+
+    var html = '<div class="sup-fail"><b>' + supFailures.length +
+               ' store(s) did not load.</b> They are NOT in the list below — ' +
+               'do not read their absence as "nothing to send".<ul>';
+    for (var i = 0; i < supFailures.length; i++) {
+      var f = supFailures[i];
+      html += '<li><b>' + supEsc(f.store) + '</b> — ' + supEsc(f.text) +
+              (f.reason === null ? ' <i>(an unexplained refusal)</i>' : '') + '</li>';
+    }
+    el.failures.innerHTML = html + '</ul></div>';
+  }
+
+  /** Only the shops that actually came back go in the picker. */
+  function supFillStoreList() {
+    var html = '';
+    for (var i = 0; i < supStores.length; i++) {
+      var name = supStores[i];
+      if (!Object.prototype.hasOwnProperty.call(supData, name)) { continue; }
+      html += '<option value="' + supEsc(name) + '">' + supEsc(name) + '</option>';
+    }
+    el.sel.innerHTML = html;
+  }
+
+  // -------------------------------------------------------------------------
+  // Showing — reads supData and nothing else. No request is sent from here.
+  // -------------------------------------------------------------------------
+
+  /** Whole days between two 'yyyy-MM-dd' strings. UTC on both sides (KD-060's rule). */
+  function supDaysBetween(fromDay, toDay) {
+    var a = Date.UTC(Number(fromDay.substring(0, 4)), Number(fromDay.substring(5, 7)) - 1,
+                     Number(fromDay.substring(8, 10)));
+    var b = Date.UTC(Number(toDay.substring(0, 4)), Number(toDay.substring(5, 7)) - 1,
+                     Number(toDay.substring(8, 10)));
+    return Math.round((b - a) / (24 * 60 * 60 * 1000));
+  }
+
+  function supPaintPanel() {
+    var name = el.sel.value;
+    var reply = Object.prototype.hasOwnProperty.call(supData, name) ? supData[name] : null;
+    if (reply === null) { el.panel.innerHTML = '<div class="sup-none">Nothing loaded for this store.</div>'; return; }
+    el.panel.innerHTML = (supTab === 'stock') ? supStockHtml(reply) : supPackHtml(reply);
+  }
+
+  /**
+   * ★★ "THE TAB IS NOT THERE" AND "NOTHING WAS COUNTED" ARE DIFFERENT PICTURES
+   *    AND MUST LOOK DIFFERENT. Both come back as an empty list; one means the
+   *    shop has not counted, the other means its file is built wrong and the
+   *    real figures are nowhere on this screen. Painting them the same way is
+   *    how somebody signs off a DO against a shop nobody has looked at.
+   */
+  function supStockHtml(reply) {
+    var stock = reply.stock;
+    if (!stock || stock.tab_present === false) {
+      return '<div class="sup-missing">This store\'s file has no STOCKS tab. ' +
+             'That is NOT "no stock count" — the tab itself is missing, so there is ' +
+             'nothing here to read and nothing to conclude. Run auditStoreFiles().</div>';
+    }
+    if (stock.date === null) {
+      return '<div class="sup-none">The STOCKS tab is there and has no counted rows at all — ' +
+             'this shop has never submitted a count.</div>';
+    }
+
+    var age = supDaysBetween(stock.date, reply.server_date);
+    var stale = (age >= SUP_STALE_DAYS);
+    var ageText = (age === 0) ? 'counted today'
+                : (age === 1) ? 'counted yesterday'
+                : (age + ' days old — this shop has not counted since');
+    if (age < 0) { ageText = 'stamped ' + (-age) + ' day(s) in the FUTURE'; stale = true; }
+
+    var html = '<div class="sup-facts">' +
+      '<span><b>Latest count:</b> ' + supEsc(stock.date) + '</span>' +
+      '<span class="sup-age ' + (stale ? 'stale' : 'fresh') + '">' + supEsc(ageText) + '</span>' +
+      '<span>against server date <b>' + supEsc(reply.server_date) + '</b></span>' +
+      '</div><div class="sup-facts">' +
+      '<span><b>First stamp:</b> ' + supCell(stock.first_stamp) + '</span>' +
+      '<span><b>Last stamp:</b> ' + supCell(stock.last_stamp) + '</span>' +
+      '<span><b>Rows:</b> ' + supEsc(stock.row_count) + '</span>' +
+      '<span><b>Distinct SKUs:</b> ' + supEsc(stock.distinct_skus) + '</span>' +
+      '<span><b>Counted by:</b> ' +
+        ((stock.employees && stock.employees.length) ? supEsc(stock.employees.join(', ')) : '&mdash;') +
+      '</span></div>';
+
+    // ★ The two stamps are printed with their HH:mm:ss for a reason: a count
+    //   that straddled midnight is split across two days on the tab, and the
+    //   time is the only thing that says so. If first and last sit either side
+    //   of 00:00 the day above is only half the count.
+    html += '<div class="sup-table"><table><tr><th>SKU</th><th>Product</th>' +
+            '<th>Closing_CD</th><th>PAR_Level</th><th>Reorder</th></tr>';
+    var rows = stock.rows || [];
+    if (rows.length === 0) {
+      html += '<tr><td colspan="5">No rows carry that date.</td></tr>';
+    }
+    for (var i = 0; i < rows.length; i++) {
+      // ★★ EVERY FIELD BY THE NAME THE BACKEND GAVE IT. Not one index into
+      //    `cells` anywhere on this screen: the column order lives in
+      //    src/Api.js's API_STOCK_HEADERS and a number typed here would be a
+      //    second copy of it, free to go stale on its own (KW-052, KB-025).
+      html += '<tr><td>' + supCell(rows[i].sku_code) + '</td>' +
+              '<td class="wrap">' + supCell(rows[i].product_name) + '</td>' +
+              '<td>' + supCell(rows[i].closing_cd) + '</td>' +
+              '<td>' + supCell(rows[i].par_level) + '</td>' +
+              '<td>' + supCell(rows[i].reorder_qty) + '</td></tr>';
+    }
+    return html + '</table></div>';
+  }
+
+  function supPackHtml(reply) {
+    var pack = reply.packaging;
+    // ★★ THE STANDING WARNING, PRINTED EVERY TIME AND NOT DISMISSIBLE. The
+    //    RESTOCK_REQUEST tab has seven columns and not one of them records
+    //    whether a request was ever filled (src/BuildStores.js). A reader who
+    //    assumes a handled/unhandled state exists will either skip a request
+    //    somebody is waiting on or send the same one twice.
+    var note = '<div class="sup-note"><b>There is no handled / unhandled state.</b> ' +
+               'The backend stores no such column, so this is every request in the ' +
+               'window — including ones already packed. Nothing here marks anything ' +
+               'as done, and this screen cannot.</div>';
+
+    if (!pack || pack.tab_present === false) {
+      return note + '<div class="sup-missing">This store\'s file has no RESTOCK_REQUEST tab. ' +
+             'That is NOT "no requests" — the tab itself is missing, so any request this ' +
+             'shop made is invisible from here. Run auditStoreFiles().</div>';
+    }
+
+    var rows = pack.rows || [];
+    var head = '<div class="sup-facts"><span><b>Window:</b> ' + supEsc(pack.from_date) +
+               ' to ' + supEsc(reply.server_date) + ' (' + supEsc(reply.days) + ' days)</span>' +
+               '<span><b>Requests:</b> ' + supEsc(pack.row_count) + '</span></div>';
+
+    if (rows.length === 0) {
+      return note + head + '<div class="sup-none">The tab is there and holds no requests in ' +
+             'this window.</div>';
+    }
+
+    var html = note + head + '<div class="sup-table"><table><tr><th>Date_Time</th>' +
+               '<th>Employee</th><th>SKU</th><th>Product</th><th>Qty</th><th>Remarks</th></tr>';
+    for (var i = 0; i < rows.length; i++) {
+      html += '<tr><td>' + supCell(rows[i].date_time) + '</td>' +
+              '<td>' + supCell(rows[i].employee) + '</td>' +
+              '<td>' + supCell(rows[i].sku_code) + '</td>' +
+              '<td class="wrap">' + supCell(rows[i].product_name) + '</td>' +
+              '<td>' + supCell(rows[i].quantity) + '</td>' +
+              '<td class="wrap">' + supCell(rows[i].remarks) + '</td></tr>';
+    }
+    return html + '</table></div>';
+  }
+
+  function supSetTab(which) {
+    supTab = which;
+    if (which === 'stock') {
+      el.stockBtn.className = 'on';
+      el.packBtn.className = 'ghost';
+    } else {
+      el.stockBtn.className = 'ghost';
+      el.packBtn.className = 'on';
+    }
+    supPaintPanel();
+  }
+
+  // -------------------------------------------------------------------------
+  // The way in
+  // -------------------------------------------------------------------------
+
+  /**
+   * Called ONLY when the server said role === 'hq' — see showSessionView, where
+   * that condition carries the note about becoming a reserved-name list.
+   * ★ Nothing is fetched on the way in. Nineteen files is a real cost and it is
+   *   spent when somebody asks for it, not because a screen appeared.
+   */
+  window.showSupplyView = function (store) {
+    el.view = grab('supplyView'); el.load = grab('supLoadBtn');
+    el.progress = grab('supProgress'); el.failures = grab('supFailures');
+    el.browse = grab('supBrowse'); el.sel = grab('supStoreSel');
+    el.stockBtn = grab('supStockBtn'); el.packBtn = grab('supPackBtn');
+    el.panel = grab('supPanel');
+
+    grab('supWho').textContent = ' · ' + String(store);
+    el.view.classList.remove('hidden');
+
+    if (!el.view.dataset.wired) {
+      el.view.dataset.wired = '1';
+      el.load.addEventListener('click', supLoadAll);
+      el.sel.addEventListener('change', supPaintPanel);
+      el.stockBtn.addEventListener('click', function () { supSetTab('stock'); });
+      el.packBtn.addEventListener('click', function () { supSetTab('packaging'); });
+    }
   };
 })();
 </script>
