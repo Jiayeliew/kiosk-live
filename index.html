@@ -134,8 +134,18 @@
      store or a null event_name leaves no orphan " · " behind. */
   #topEvent{color:var(--gold);font-family:'DM Mono',monospace;font-weight:400;
             font-size:10px;letter-spacing:1px;}
-  .build-tag{font-family:'DM Mono',monospace;font-size:9px;color:var(--muted2);
+  .build-tag{font-family:'DM Mono',monospace;font-size:11px;color:var(--text);
              letter-spacing:1px;user-select:all;}
+  /* ★ KB-086: the tag used to live inside #sessionView, so HQ and
+     FACTORY could not see which build they were on — the two identities
+     that most need to answer "did I actually refresh" (KW-039). It is
+     now top-level and outside all four views. pointer-events:none so it
+     can never sit on top of a button on any screen; z-index below the
+     topbar's 50 and far below every modal. */
+  #buildTagHost{position:fixed;left:8px;bottom:6px;z-index:40;
+                pointer-events:none;background:var(--bg);
+                border:1px solid var(--muted);border-radius:3px;
+                padding:2px 5px;box-shadow:0 1px 3px rgba(0,0,0,0.12);}
   .topbar-logout{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;
                  color:var(--muted);background:var(--surface2);
                  border:1px solid var(--border2);border-radius:7px;
@@ -641,17 +651,6 @@
       <div class="sync-dot" id="syncDot"></div>
       <span id="syncText">SETUP</span>
     </div>
-    <!-- ★ P5. The build this tablet is running. A kiosk is never rebooted, so a
-         shop can sit on last week's file for days and report "the new one is
-         broken" — and a photo of the screen cannot tell the two apart. Written
-         into the file at commit time; it costs no request. -->
-    <!-- ★★ KD-050 §2. In THIS repo the tag is the fixed placeholder `dev` and is
-         never a hash. Only the published mirror (kiosk-live) carries a real one,
-         stamped against ITS OWN commit — a hash from this repo names a commit
-         that does not exist where the tablet loaded the file from (KB-060).
-         ★ A screen reading `dev` means somebody is looking at an unpublished
-         copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build b0056c7">b0056c7</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -1005,6 +1004,20 @@
 <div id="headline"></div>
 <div id="message"></div>
 
+<div id="buildTagHost">
+    <!-- ★ P5. The build this tablet is running. A kiosk is never rebooted, so a
+         shop can sit on last week's file for days and report "the new one is
+         broken" — and a photo of the screen cannot tell the two apart. Written
+         into the file at commit time; it costs no request. -->
+    <!-- ★★ KD-050 §2. In THIS repo the tag is the fixed placeholder `dev` and is
+         never a hash. Only the published mirror (kiosk-live) carries a real one,
+         stamped against ITS OWN commit — a hash from this repo names a commit
+         that does not exist where the tablet loaded the file from (KB-060).
+         ★ A screen reading `dev` means somebody is looking at an unpublished
+         copy, which is true and useful; a stale hash would be a lie. -->
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -1130,6 +1143,11 @@
     //   hide it too. A store session never sees this element at all.
     var hqView = document.getElementById('hqView');
     if (hqView) { hqView.classList.add('hidden'); }
+    // ★ KB-088: supplyView is the third sibling. Logging out must hide the
+    //   DO desk too, or nineteen stores' stock stays on screen for whoever
+    //   is next at that terminal.
+    var supplyView = document.getElementById('supplyView');
+    if (supplyView) { supplyView.classList.add('hidden'); }
     showLoginChrome(true);
     passwordEl.value = '';
   }
@@ -1179,18 +1197,18 @@
       //   spend quota on a request with nothing to fetch. The interval and the
       //   behaviour for store users are untouched.
       window.showHqView(store);
-      // ★★ THE DO DESK IS SHOWN TO HQ AS WELL, AND THAT IS DELIBERATE.
-      //     'factory' now has its own branch above (KD-071), but the FACTORY
-      //     row itself does not exist in STORES yet, so HQ is holding the desk
-      //     in the meantime (KB-083). ★ Here it is ADDITIVE: HQ keeps the
-      //     publish screen and the week screen and gains this one. FACTORY
-      //     sees only this one. ★★ Both are decided by the SERVER from the
-      //     store name and merely read here, never asserted by the page
-      //     (src/Api.js apiRoleForStore_).
-      // ★ WHEN FACTORY IS LIVE AND HQ NO LONGER NEEDS THE DESK, the only edit
-      //     is deleting the call below — the branch above already stands alone.
+      // ★★ THE DO DESK IS SHOWN TO HQ AS WELL, AND THAT IS DELIBERATE AND
+      //     PERMANENT. FACTORY went live 2026-08-13 (KB-083 closed) and has
+      //     its own branch above; HQ keeps the desk on purpose, so this call
+      //     is NOT a leftover to be deleted. ★ Additive: HQ keeps the publish
+      //     screen and the week screen and gains this one; FACTORY sees only
+      //     this one. Both decided server-side (src/Api.js apiRoleForStore_).
       // ★ startDashboard() / startAutoSync() are NOT called here either, for
-      //   the reason stated four lines up.
+      //   the reason given in the comment directly above the
+      //   window.showHqView(store) call. ★ KW-038 family: that reason used to
+      //   be located as "four lines up", which stopped being true the moment
+      //   the comment beside it changed length. A coordinate names a thing,
+      //   never a distance.
       if (typeof window.showSupplyView === 'function') { window.showSupplyView(store); }
       return;
     }
@@ -4360,6 +4378,14 @@ function stopDashboard(){
   <div class="sup-wrap">
     <section class="sup-card">
       <h2>Supply · DO desk<span id="supWho"></span></h2>
+      <!-- ★ KB-089: the DO desk had no way out at all. FACTORY sees this
+           screen and nothing else, so without this button nineteen stores'
+           stock stayed on the terminal until the browser was closed.
+           ★ HQ sees two Log out buttons (its own topbar and this one) and
+           that is accepted: branching on identity in the page would mean
+           the page asserting a role, and role is decided server-side and
+           only read here (KD-071). -->
+      <button id="supLogoutBtn" class="topbar-logout">Log out</button>
       <p class="sup-hint">Reads every store's most recent stock count and the packaging
         it has asked for in the last 14 days. Nothing here writes anything, anywhere —
         this screen only looks.</p>
@@ -4731,7 +4757,7 @@ function stopDashboard(){
     el.progress = grab('supProgress'); el.failures = grab('supFailures');
     el.browse = grab('supBrowse'); el.sel = grab('supStoreSel');
     el.stockBtn = grab('supStockBtn'); el.packBtn = grab('supPackBtn');
-    el.panel = grab('supPanel');
+    el.panel = grab('supPanel'); el.logout = grab('supLogoutBtn');
 
     grab('supWho').textContent = ' · ' + String(store);
     el.view.classList.remove('hidden');
@@ -4742,6 +4768,7 @@ function stopDashboard(){
       el.sel.addEventListener('change', supPaintPanel);
       el.stockBtn.addEventListener('click', function () { supSetTab('stock'); });
       el.packBtn.addEventListener('click', function () { supSetTab('packaging'); });
+      el.logout.addEventListener('click', function () { window.endSession(); });
     }
   };
 })();
