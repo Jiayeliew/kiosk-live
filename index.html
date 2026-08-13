@@ -651,7 +651,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 00ecc09">00ecc09</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
     <button id="logoutBtn" class="topbar-logout">Log out</button>
   </div>
 </div>
@@ -1138,12 +1138,36 @@
    * ★★ THE ROLE COMES FROM THE SERVER AND FROM NOWHERE ELSE. `role` is computed
    *    in src/Api.js from the store name signed into the token; this page reads
    *    it and never asserts it.
-   * ★★ ANYTHING THAT IS NOT EXACTLY 'hq' — a missing field, an old backend, a
-   *    typo, a store session — falls through to the promoter screen unchanged.
-   *    That is the whole safety property: the new branch can only ever ADD a
-   *    screen, never take the existing one away.
+   * ★★ ANYTHING THAT IS NOT EXACTLY 'hq' OR EXACTLY 'factory' — a missing
+   *    field, an old backend, a typo, a store session — falls through to the
+   *    promoter screen unchanged. That is the whole safety property: a new
+   *    branch can only ever ADD a screen, never take the existing one away.
+   *    ★ Both tests are equality against a named value; there is no "not hq
+   *    therefore promoter" anywhere, so a role nobody has invented yet lands on
+   *    the promoter screen rather than on somebody else's.
    */
   function showSessionView(store, role) {
+    // ★★ THE DO DESK, AND NOTHING ELSE (KD-071, KB-083 step 5). FACTORY is the
+    //    second reserved STORES row; the server decides the role from the store
+    //    name signed into the token (src/Api.js apiRoleForStore_) and this page
+    //    only reads it. ★ No publish screen, no week screen, and none of the
+    //    promoter's own machinery — startDashboard() and startAutoSync() are
+    //    not called, exactly as for 'hq'.
+    // ★★ If showSupplyView is somehow absent, this returns to the login screen
+    //    rather than falling through: a FACTORY session must never land on the
+    //    promoter's tools, and a blank-handed fallback is the safe direction.
+    if (role === 'factory') {
+      loginView.classList.add('hidden');
+      sessionView.classList.add('hidden');
+      var factoryHqView = document.getElementById('hqView');
+      if (factoryHqView) { factoryHqView.classList.add('hidden'); }
+      passwordEl.value = '';
+      say('', '', '');
+      showLoginChrome(false);
+      if (typeof window.showSupplyView === 'function') { window.showSupplyView(store); }
+      else { showLoginView(); }
+      return;
+    }
     if (role === 'hq' && typeof window.showHqView === 'function') {
       loginView.classList.add('hidden');
       sessionView.classList.add('hidden');
@@ -1155,15 +1179,16 @@
       //   spend quota on a request with nothing to fetch. The interval and the
       //   behaviour for store users are untouched.
       window.showHqView(store);
-      // ★★★ 'hq' HERE IS A PLACEHOLDER FOR A LIST, NOT THE FINAL RULE.
-      //     The DO desk below is for whoever cuts the delivery orders, and that
-      //     is going to be its own reserved STORES row (FACTORY) once KD-055's
-      //     list holds a second name. That row does not exist yet, so there is
-      //     no role but 'hq' that can reach this screen today. ★ WHEN IT DOES:
-      //     this condition becomes "is the session's store one of the reserved
-      //     names, and which one" — decided by the SERVER and read here, never
-      //     asserted by the page (src/Api.js apiRoleForStore_). Until then the
-      //     supply view is additive to the HQ screen and takes nothing away.
+      // ★★ THE DO DESK IS SHOWN TO HQ AS WELL, AND THAT IS DELIBERATE.
+      //     'factory' now has its own branch above (KD-071), but the FACTORY
+      //     row itself does not exist in STORES yet, so HQ is holding the desk
+      //     in the meantime (KB-083). ★ Here it is ADDITIVE: HQ keeps the
+      //     publish screen and the week screen and gains this one. FACTORY
+      //     sees only this one. ★★ Both are decided by the SERVER from the
+      //     store name and merely read here, never asserted by the page
+      //     (src/Api.js apiRoleForStore_).
+      // ★ WHEN FACTORY IS LIVE AND HQ NO LONGER NEEDS THE DESK, the only edit
+      //     is deleting the call below — the branch above already stands alone.
       // ★ startDashboard() / startAutoSync() are NOT called here either, for
       //   the reason stated four lines up.
       if (typeof window.showSupplyView === 'function') { window.showSupplyView(store); }
