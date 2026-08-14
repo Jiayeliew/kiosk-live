@@ -327,6 +327,21 @@
   .sup-qty:focus{outline:none;border-color:var(--blue);}
   .sup-empty{text-align:center;padding:40px;font-family:'DM Mono',monospace;font-size:13px;color:var(--muted);}
   .sup-footer{margin-top:20px;text-align:center;}
+  .sup-actions{display:flex;justify-content:center;align-items:center;gap:12px;flex-wrap:wrap;}
+  /* ★ Deliberately NOT green and NOT beside the send button in the same weight.
+       Clearing is a small, reversible thing; sending is not. */
+  .sup-clear-btn{padding:12px 20px;background:transparent;border:1.5px solid var(--border2);border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;}
+  .sup-clear-btn:hover{border-color:var(--red-border);color:var(--red);}
+
+  /* ★★ THE PREFILL NOTICE. It says what was sent last, and that sending again
+        REPLACES it — a promoter who reads this as "add to" would double the
+        order and nothing on the sheet would say she had. */
+  .sup-last{border-radius:12px;padding:12px 16px;margin-bottom:16px;border:1px solid var(--border);background:var(--surface2);font-size:13px;line-height:1.6;}
+  .sup-last.none{color:var(--muted);}
+  .sup-last b{font-weight:700;}
+  .sup-last-rule{margin-top:6px;color:var(--text);font-weight:600;}
+  .sup-last-cn{margin-top:5px;font-size:12px;color:var(--muted);line-height:1.7;}
+  .sup-last-gone{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border2);font-size:12px;color:var(--red);line-height:1.6;}
 
   /* The three answers. ★ Every one of them draws — none of this page is silent. */
   .sup-result{margin-top:18px;border-radius:12px;padding:14px 18px;border:1px solid;display:none;}
@@ -853,11 +868,18 @@
         </select>
       </div>
     </div>
+    <!-- ★★ Filled by supApplyPrefill from getPackaging's last_request. Empty
+         until the list has loaded, so a half-drawn page never claims anything
+         about what was or was not sent. -->
+    <div class="sup-last" id="supLastNote" style="display:none"></div>
     <div class="sup-grid" id="supGrid">
       <div class="sup-empty">Loading items…</div>
     </div>
     <div class="sup-footer">
+      <div class="sup-actions">
       <button class="submit-stock-btn" id="supSubmitBtn" onclick="submitSupplyRequest()">Send Request</button>
+      <button class="sup-clear-btn" id="supClearBtn" onclick="supClearAll()">Clear All</button>
+      </div>
       <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5;">
         Leave a box empty for anything you do not need — whole numbers only.<br>
         <span style="font-size:10px;">不需要的留空即可，数量只填整数。</span>
@@ -1015,7 +1037,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build cb8afc8">cb8afc8</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -2286,6 +2308,107 @@ async function loadSupplyTab(){
         + '</div>';
   }
   grid.innerHTML=html;
+
+  // ★ After the boxes exist, never before: the prefill writes into them.
+  supApplyPrefill(res.data.last_request);
+}
+
+/**
+ * The one way this page compares a SKU: trimmed and case-folded, the same rule
+ * the server joins by (normalise_). A SKU that gained a space in HQ PRODUCTS
+ * since the last request must still find its box.
+ */
+function supKey(sku){ return String(sku==null?"":sku).trim().toUpperCase(); }
+
+/**
+ * Put the last request back in the boxes, and say what it was.
+ *
+ * ★★ MATCHED BY SKU, NEVER BY POSITION. `supItems` comes back in PRODUCTS row
+ *    order and `last_request.lines` in the order they were written to
+ *    RESTOCK_REQUEST; nothing holds those two in step, and an index-to-index
+ *    prefill would put last night's box count into whatever item happens to sit
+ *    at that row today. The lookup is a SKU -> position map built from THIS
+ *    page's own list, so a SKU that is not on the list cannot land anywhere.
+ *
+ * ★★ A LINE THAT NO LONGER EXISTS IS NAMED, NOT DROPPED. If HQ has taken an item
+ *    out of PRODUCTS since she last asked for it, it cannot be requested and it
+ *    cannot be prefilled — and she must be told, because the one thing she
+ *    cannot notice is a line that was never drawn (KD-027).
+ *
+ * ★ date_time is printed as the server's own string. It is already
+ *   Asia/Kuala_Lumpur to the second (KW-019); re-deriving it from the tablet's
+ *   clock is how a stamp starts disagreeing with the sheet it came from.
+ */
+function supApplyPrefill(last){
+  var note=document.getElementById("supLastNote");
+  if(!note) return;
+  note.style.display="";
+
+  if(!last || !last.lines || !last.lines.length){
+    note.className="sup-last none";
+    note.innerHTML='<b>No request has been sent from this shop yet.</b> '
+                  +'Type how many you need beside each item, then press Send Request.'
+                  +'<div class="sup-last-cn">这家店还没有送过申请。需要多少就填在品项旁边，然后按 Send Request。</div>';
+    return;
+  }
+
+  var slot={};
+  for(var i=0;i<supItems.length;i++){ slot[supKey(supItems[i].sku)]=i; }
+
+  var filled=0;
+  var gone=[];
+  for(var l=0;l<last.lines.length;l++){
+    var line=last.lines[l];
+    var key=supKey(line.sku_code);
+    if(!Object.prototype.hasOwnProperty.call(slot,key)){
+      gone.push(String(line.sku_code||"")+(line.product_name?" — "+line.product_name:""));
+      continue;
+    }
+    var at=slot[key];
+    var box=document.getElementById("supQty-"+at);
+    if(!box) continue;
+    box.value=line.quantity;
+    supQtyChanged(at);
+    filled++;
+  }
+
+  note.className="sup-last";
+  var html='<b>Last request: '+feedEscape(last.employee||"—")+' · '
+          +feedEscape(last.date_time||"—")+'</b>'
+          +' — those '+filled+' item(s) are filled in below.'
+          +'<div class="sup-last-rule">Sending again REPLACES that request. It does not add to it. '
+          +'Whatever is in the boxes when you press Send Request is everything you are asking for tonight — '
+          +'so leave the numbers you still need, change the ones that moved, and clear the rest.</div>'
+          +'<div class="sup-last-cn">上一次是 '+feedEscape(last.employee||"—")+' 在 '
+          +feedEscape(last.date_time||"—")+' 送出的，数量已经帮你填回去了。'
+          +'再送一次是【整批取代】上一次，不是累加 —— 按下 Send Request 时框里有什么，'
+          +'就是今晚要的全部。还要的就留着，数量变了就改，不要的清空。</div>';
+
+  if(gone.length){
+    html+='<div class="sup-last-gone"><b>'+gone.length+' item(s) from that request are no longer on this list</b>, '
+         +'so they are NOT filled in and cannot be asked for: '+feedEscape(gone.join("; "))+'. '
+         +'Tell HQ if you still need them.'
+         +'<div class="sup-last-cn">上次报过、但目录里已经没有这些品项，无法再申请，也没有帮你填：'
+         +feedEscape(gone.join("; "))+'。还需要的话请告诉总部。</div></div>';
+  }
+  note.innerHTML=html;
+}
+
+/**
+ * Empty every box.
+ *
+ * ★★ EMPTIED, NEVER ZEROED. supLines skips an empty box and sends nothing for
+ *    it; a 0 is not skipped — it becomes a `bad` line, and submitSupplyRequest
+ *    holds back the WHOLE batch when even one line is bad. A Clear All that
+ *    wrote zeros would arm a refusal of everything she typed afterwards.
+ */
+function supClearAll(){
+  if(!supItems) return;
+  for(var i=0;i<supItems.length;i++){
+    var box=document.getElementById("supQty-"+i);
+    if(box){ box.value=""; supQtyChanged(i); }
+  }
+  supSay();
 }
 
 /** Paint the card as soon as it carries a number, so a filled line is obvious. */
