@@ -327,20 +327,20 @@
   .sup-qty:focus{outline:none;border-color:var(--blue);}
   .sup-empty{text-align:center;padding:40px;font-family:'DM Mono',monospace;font-size:13px;color:var(--muted);}
   .sup-footer{margin-top:20px;text-align:center;}
-  .sup-actions{display:flex;justify-content:center;align-items:center;gap:12px;flex-wrap:wrap;}
-  /* ★ Deliberately NOT green and NOT beside the send button in the same weight.
-       Clearing is a small, reversible thing; sending is not. */
-  .sup-clear-btn{padding:12px 20px;background:transparent;border:1.5px solid var(--border2);border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;}
-  .sup-clear-btn:hover{border-color:var(--red-border);color:var(--red);}
-
-  /* ★★ THE PREFILL NOTICE. It says what was sent last, and that sending again
-        REPLACES it — a promoter who reads this as "add to" would double the
-        order and nothing on the sheet would say she had. */
+  /* ★★ THE PREFILL NOTICE, TWO LINES. It was five, and a promoter who uses this
+        page once a night skips five — including the one line that matters. The
+        rule survives because it is short enough to be read. */
   .sup-last{border-radius:12px;padding:12px 16px;margin-bottom:16px;border:1px solid var(--border);background:var(--surface2);font-size:13px;line-height:1.6;}
   .sup-last.none{color:var(--muted);}
   .sup-last b{font-weight:700;}
+  .sup-last-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .sup-last-line>span{flex:1;min-width:0;}
+  /* ★ Sits ON the line it clears, not at the bottom of the page: "Clear" means
+       "clear the batch that sentence just named", and a button parked somewhere
+       else is a button whose object has to be guessed. */
+  .sup-clear-btn{flex-shrink:0;padding:6px 12px;background:transparent;border:1.5px solid var(--border2);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;transition:all .15s;}
+  .sup-clear-btn:hover{border-color:var(--red-border);color:var(--red);}
   .sup-last-rule{margin-top:6px;color:var(--text);font-weight:600;}
-  .sup-last-cn{margin-top:5px;font-size:12px;color:var(--muted);line-height:1.7;}
   .sup-last-gone{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border2);font-size:12px;color:var(--red);line-height:1.6;}
 
   /* The three answers. ★ Every one of them draws — none of this page is silent. */
@@ -876,10 +876,7 @@
       <div class="sup-empty">Loading items…</div>
     </div>
     <div class="sup-footer">
-      <div class="sup-actions">
       <button class="submit-stock-btn" id="supSubmitBtn" onclick="submitSupplyRequest()">Send Request</button>
-      <button class="sup-clear-btn" id="supClearBtn" onclick="supClearAll()">Clear All</button>
-      </div>
       <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5;">
         Leave a box empty for anything you do not need — whole numbers only.<br>
         <span style="font-size:10px;">不需要的留空即可，数量只填整数。</span>
@@ -1037,7 +1034,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 4fb2168">4fb2168</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -2344,11 +2341,11 @@ function supApplyPrefill(last){
   if(!note) return;
   note.style.display="";
 
+  // ★ No batch, no Clear button. There is nothing for it to clear, and a button
+  //   that does nothing teaches her that buttons on this page do nothing.
   if(!last || !last.lines || !last.lines.length){
     note.className="sup-last none";
-    note.innerHTML='<b>No request has been sent from this shop yet.</b> '
-                  +'Type how many you need beside each item, then press Send Request.'
-                  +'<div class="sup-last-cn">这家店还没有送过申请。需要多少就填在品项旁边，然后按 Send Request。</div>';
+    note.innerHTML='还没有送过申请 · No request sent yet';
     return;
   }
 
@@ -2373,23 +2370,15 @@ function supApplyPrefill(last){
   }
 
   note.className="sup-last";
-  var html='<b>Last request: '+feedEscape(last.employee||"—")+' · '
-          +feedEscape(last.date_time||"—")+'</b>'
-          +' — those '+filled+' item(s) are filled in below.'
-          +'<div class="sup-last-rule">Sending again REPLACES that request. It does not add to it. '
-          +'Whatever is in the boxes when you press Send Request is everything you are asking for tonight — '
-          +'so leave the numbers you still need, change the ones that moved, and clear the rest.</div>'
-          +'<div class="sup-last-cn">上一次是 '+feedEscape(last.employee||"—")+' 在 '
-          +feedEscape(last.date_time||"—")+' 送出的，数量已经帮你填回去了。'
-          +'再送一次是【整批取代】上一次，不是累加 —— 按下 Send Request 时框里有什么，'
-          +'就是今晚要的全部。还要的就留着，数量变了就改，不要的清空。</div>';
+  var html='<div class="sup-last-line"><span><b>Last request: '
+          +feedEscape(last.employee||"—")+' · '+feedEscape(last.date_time||"—")+'</b>'
+          +' — '+filled+' item(s) filled in below.</span>'
+          +'<button class="sup-clear-btn" id="supClearBtn" onclick="supClearAll()">Clear  清空</button></div>'
+          +'<div class="sup-last-rule">再送一次＝整批取代上一次 · Sending again replaces it</div>';
 
   if(gone.length){
-    html+='<div class="sup-last-gone"><b>'+gone.length+' item(s) from that request are no longer on this list</b>, '
-         +'so they are NOT filled in and cannot be asked for: '+feedEscape(gone.join("; "))+'. '
-         +'Tell HQ if you still need them.'
-         +'<div class="sup-last-cn">上次报过、但目录里已经没有这些品项，无法再申请，也没有帮你填：'
-         +feedEscape(gone.join("; "))+'。还需要的话请告诉总部。</div></div>';
+    html+='<div class="sup-last-gone">目录里已没有、无法再申请 · No longer on this list: '
+         +feedEscape(gone.join("; "))+'</div>';
   }
   note.innerHTML=html;
 }
