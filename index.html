@@ -1034,7 +1034,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 3805d89">3805d89</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -4801,45 +4801,101 @@ function stopDashboard(){
     return html + '</table></div>';
   }
 
+  /**
+   * One list of packaging rows as the table this screen has always drawn.
+   * ★ The columns, their order and their headings are unchanged — this was
+   *   lifted out of supPackHtml so tonight's batch and the folded-away older
+   *   ones are drawn by the same code and cannot drift apart.
+   */
+  function supPackTable(list) {
+    var html = '<div class="sup-table"><table><tr><th>Date_Time</th>' +
+               '<th>Employee</th><th>SKU</th><th>Product</th><th>Qty</th><th>Remarks</th></tr>';
+    for (var i = 0; i < list.length; i++) {
+      html += '<tr><td>' + supCell(list[i].date_time) + '</td>' +
+              '<td>' + supCell(list[i].employee) + '</td>' +
+              '<td>' + supCell(list[i].sku_code) + '</td>' +
+              '<td class="wrap">' + supCell(list[i].product_name) + '</td>' +
+              '<td>' + supCell(list[i].quantity) + '</td>' +
+              '<td class="wrap">' + supCell(list[i].remarks) + '</td></tr>';
+    }
+    return html + '</table></div>';
+  }
+
+  /**
+   * The packaging panel: TONIGHT'S batch in front, everything older folded away
+   * behind a disclosure that starts shut (KB-092).
+   *
+   * ★★★ ONE SUBMISSION IS ONE NIGHT'S COMPLETE REQUEST (KD-077). The flat
+   *     fourteen-day list this used to draw put the oldest row at the top and
+   *     left the packer to work out which lines were tonight's — the one thing
+   *     a person packing at 6am cannot afford to get wrong.
+   * ★★★ WHICH BATCH IS THE LAST ONE IS NOT DECIDED HERE. The server sends
+   *     current_request already picked; this function only draws it. A second
+   *     implementation would be a second answer with nobody to arbitrate it
+   *     (KD-075) — and a browser deciding it would be deciding it against the
+   *     clock of whatever terminal the DO desk happens to be sitting at.
+   * ★★ THE STANDING "no handled / unhandled state" NOTE IS GONE, NOT REWORDED.
+   *    Both halves of it stopped being true: the screen is no longer every
+   *    request in the window, and "already packed" is a state that will never
+   *    exist (KB-018 / KB-082 were both refused — a tick would record that the
+   *    DO desk did something, not that the goods arrived). Half-true text in
+   *    front of somebody packing is still a lie.
+   */
   function supPackHtml(reply) {
     var pack = reply.packaging;
-    // ★★ THE STANDING WARNING, PRINTED EVERY TIME AND NOT DISMISSIBLE. The
-    //    RESTOCK_REQUEST tab has seven columns and not one of them records
-    //    whether a request was ever filled (src/BuildStores.js). A reader who
-    //    assumes a handled/unhandled state exists will either skip a request
-    //    somebody is waiting on or send the same one twice.
-    var note = '<div class="sup-note"><b>There is no handled / unhandled state.</b> ' +
-               'The backend stores no such column, so this is every request in the ' +
-               'window — including ones already packed. Nothing here marks anything ' +
-               'as done, and this screen cannot.</div>';
 
+    // ★★ A MISSING TAB IS NOT "NOTHING TO PACK", and the two must not look
+    //    alike on screen. This branch and its words are untouched.
     if (!pack || pack.tab_present === false) {
-      return note + '<div class="sup-missing">This store\'s file has no RESTOCK_REQUEST tab. ' +
+      return '<div class="sup-missing">This store\'s file has no RESTOCK_REQUEST tab. ' +
              'That is NOT "no requests" — the tab itself is missing, so any request this ' +
              'shop made is invisible from here. Run auditStoreFiles().</div>';
     }
 
     var rows = pack.rows || [];
-    var head = '<div class="sup-facts"><span><b>Window:</b> ' + supEsc(pack.from_date) +
-               ' to ' + supEsc(reply.server_date) + ' (' + supEsc(reply.days) + ' days)</span>' +
-               '<span><b>Requests:</b> ' + supEsc(pack.row_count) + '</span></div>';
+    var current = pack.current_request || null;
+    var currentRows = (current && current.rows) ? current.rows : [];
 
-    if (rows.length === 0) {
-      return note + head + '<div class="sup-none">The tab is there and holds no requests in ' +
-             'this window.</div>';
+    // ★★ THE WINDOW IS PRINTED EXACTLY AS THE SERVER SENT IT — not parsed, not
+    //    reformatted, not turned into a Date. This terminal's clock is not
+    //    evidence and must never reach this screen (KD-073).
+    var facts = '<div class="sup-facts"><span><b>Window:</b> ' + supEsc(pack.window_from) +
+                ' to ' + supEsc(pack.window_to) + '</span>';
+    if (current !== null) {
+      // ★ Which night is being looked at, in the batch's own stamp.
+      facts += '<span><b>Batch:</b> ' + supEsc(current.date_time) + '</span>';
+    }
+    facts += '</div>';
+
+    var html = facts;
+    if (current === null) {
+      // ★ A sentence, never an empty table: an empty table reads the same as a
+      //   missing tab, and those are two different facts.
+      html += '<div class="sup-none">No request since yesterday noon.</div>';
+    } else {
+      html += supPackTable(currentRows);
     }
 
-    var html = note + head + '<div class="sup-table"><table><tr><th>Date_Time</th>' +
-               '<th>Employee</th><th>SKU</th><th>Product</th><th>Qty</th><th>Remarks</th></tr>';
+    // ★★ SPLIT ON THE STAMP THE SERVER ALREADY NAMED, which is not a second
+    //    opinion about which batch is last: every row carrying current_request's
+    //    Date_Time is by definition in that batch, so this only sorts the rows
+    //    the server's own answer into two piles.
+    var earlier = [];
     for (var i = 0; i < rows.length; i++) {
-      html += '<tr><td>' + supCell(rows[i].date_time) + '</td>' +
-              '<td>' + supCell(rows[i].employee) + '</td>' +
-              '<td>' + supCell(rows[i].sku_code) + '</td>' +
-              '<td class="wrap">' + supCell(rows[i].product_name) + '</td>' +
-              '<td>' + supCell(rows[i].quantity) + '</td>' +
-              '<td class="wrap">' + supCell(rows[i].remarks) + '</td></tr>';
+      if (current !== null && String(rows[i].date_time) === String(current.date_time)) { continue; }
+      earlier.push(rows[i]);
     }
-    return html + '</table></div>';
+
+    // ★ Shut by default, and no JS behind it. supPaintPanel replaces this whole
+    //   block on every repaint, so an opened disclosure closes again when the
+    //   store or tab is switched — accepted, and not worth state management.
+    if (earlier.length > 0) {
+      html += '<details><summary>Earlier requests in the last ' + supEsc(SUP_DAYS) +
+              ' days (' + supEsc(earlier.length) + ' rows)</summary>' +
+              supPackTable(earlier) + '</details>';
+    }
+
+    return html;
   }
 
   function supSetTab(which) {
