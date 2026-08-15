@@ -1074,7 +1074,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 5b40e13">5b40e13</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -5102,7 +5102,43 @@ function stopDashboard(){
     s.tip.style.top = topPx + 'px';
   }
 
+  /**
+   * ★★★ preventDefault IS NOT CALLED HERE, AND MUST NOT BE. This runs on every
+   *     pointermove over the chart, and a finger that was on its way past the
+   *     card is how the page is scrolled on a phone. Cancelling the default
+   *     would nail the overview to the screen under the one gesture that reads
+   *     it. The long-press selection this fixes is a CSS matter (user-select on
+   *     the chart box), not a reason to swallow the gesture.
+   */
   function ovTipMove(ev) { ovTipAt(ev.clientX); }
+
+  /**
+   * The pointer left the chart.
+   *
+   * ★★ A MOUSE PUTS THE READ-OUT AWAY; A FINGER DOES NOT. Leaving is what a
+   *    mouse does on its way somewhere else and hiding then is right — that
+   *    behaviour is untouched. But a finger emits pointerleave the instant it
+   *    is LIFTED, which is exactly the moment the number is finally readable:
+   *    obeying it is what forced the boss to keep pressing, and pressing is
+   *    what summons the browser's copy menu.
+   * ★ pointercancel is not this: the gesture was taken away by the browser, so
+   *   the read-out goes with it whatever kind of pointer it was.
+   */
+  function ovTipLeave(ev) {
+    if (ev && ev.pointerType && ev.pointerType !== 'mouse') { return; }
+    ovTipHide();
+  }
+
+  /**
+   * ★ What a touched read-out waits for: the next press anywhere that is not
+   *   the chart. Tapping another day inside the chart moves it instead, which
+   *   is the same press doing the same thing.
+   */
+  function ovTipOutside(ev) {
+    if (!ovEl.chartBox) { return; }
+    if (ev.target && ovEl.chartBox.contains(ev.target)) { return; }
+    ovTipHide();
+  }
 
   function ovChart(byDate) {
     var dates = [];
@@ -5209,8 +5245,11 @@ function stopDashboard(){
       ovEl.chartBox.dataset.ovtip = '1';
       ovEl.chartBox.addEventListener('pointermove', ovTipMove);
       ovEl.chartBox.addEventListener('pointerdown', ovTipMove);
-      ovEl.chartBox.addEventListener('pointerleave', ovTipHide);
+      ovEl.chartBox.addEventListener('pointerleave', ovTipLeave);
       ovEl.chartBox.addEventListener('pointercancel', ovTipHide);
+      // ★ The one listener outside the card, and it only ever HIDES. It is what
+      //   lets a finger let go and still read the number.
+      document.addEventListener('pointerdown', ovTipOutside);
     }
   }
 
@@ -5820,6 +5859,16 @@ function stopDashboard(){
 /* ─── The chart read-out. The bubble lives inside the chart card, so the card
        becomes its containing block. */
 #hqView .ov-chart{position:relative}
+/* ★★★ THE CHART BOX AND NOTHING ELSE. Reading a day off the line means holding
+       a finger on it, and a held finger is also the browser's select-and-copy
+       gesture: the callout menu lands on top of the very line being read.
+   ★★★ SCOPED TO ONE ID ON PURPOSE. #hqOvChartBox is a single <div> that holds
+       only the svg and the bubble. It is NOT on body and not on any wrapper —
+       the promoter's note fields and the DO desk's figures must stay
+       selectable and copyable, and a rule any higher would take that away
+       everywhere without anybody noticing until somebody needed it. */
+#hqOvChartBox{-webkit-user-select:none;-ms-user-select:none;user-select:none;
+  -webkit-touch-callout:none}
 #hqView .ov-tip{position:absolute;left:0;top:0;display:none;pointer-events:none;
   background:#222;color:#fff;font-size:12px;font-weight:600;line-height:1.3;
   padding:5px 9px;border-radius:8px;white-space:nowrap;z-index:2}
