@@ -603,6 +603,28 @@
   </div>
 
   <div class="hq-wrap">
+    <!-- ★★ THE OVERVIEW COVER. Added in front of the three screens that were
+             already here; not one line of those three is touched, and they are
+             not renumbered. Everything in this section is id-prefixed hqOv or
+             class-prefixed ov-, so nothing below can collide with it.
+         ★ READ ONLY. It calls listStores and getStoreWeek, both of which write
+           nothing anywhere. There is no button in here that sends. -->
+    <section class="hq-card" id="hqOverview">
+      <div class="ov-head">
+        <h2>Overview<small id="hqOvRange"></small></h2>
+        <div class="ov-corner">
+          <div id="hqOvProgress">Loading…</div>
+          <div id="hqOvTiming"></div>
+        </div>
+      </div>
+      <p class="hq-hint">Every store, asked one at a time and read straight from its own
+        file. Nothing here is cached and nothing here writes.</p>
+      <div class="ov-tiles" id="hqOvTiles"></div>
+      <p class="ov-cover" id="hqOvCover"></p>
+      <div id="hqOvChartBox"></div>
+      <div class="ov-table" id="hqOvTable"></div>
+    </section>
+
     <section class="hq-card">
       <h2>1 · Stores</h2>
       <p class="hq-hint">Nothing is ticked to start with. Tick the stores you want to
@@ -1034,7 +1056,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 5632679">5632679</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -3615,6 +3637,46 @@ function stopDashboard(){
   white-space:nowrap}
 #hqView .hq-week th:first-child,#hqView .hq-week td:first-child{text-align:left}
 #hqView .hq-week caption{text-align:left;font-weight:600;padding:10px 0 4px}
+
+/* ─── The overview cover. ADDITIVE: every selector below is new and scoped to
+       #hqView .ov-*, so not one rule above can be reached by it, and the three
+       screens that were here first render exactly as they did.
+   ★ The values are the DO desk's (#supplyView): the same #d8d8d8 card border,
+     the same #e0e0e0 cell border, the same #c0392b red, the same greys. The
+     look is reused rather than reinvented; only the selectors are new, because
+     sup-* rules are scoped to #supplyView and cannot cross into here. */
+#hqView .ov-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px}
+#hqView .ov-corner{margin-left:auto;font-size:12px;color:#777;text-align:right;line-height:1.6}
+#hqView .ov-corner b{color:#111}
+#hqView .ov-tiles{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0 4px}
+#hqView .ov-tile{flex:1 1 180px;border:1px solid #d8d8d8;border-radius:10px;padding:11px 13px;
+                 background:#fafafa}
+#hqView .ov-tile .ov-label{font-size:12px;color:#555;letter-spacing:.02em}
+#hqView .ov-tile .ov-value{font-size:26px;font-weight:700;color:#111;line-height:1.25}
+#hqView .ov-cover{margin:2px 0 0;font-size:12px;color:#666}
+#hqView .ov-cover.short{color:#c0392b;font-weight:600}
+#hqView .ov-chart{margin-top:12px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;
+                  padding:8px;overflow-x:auto}
+#hqView .ov-chart svg{display:block;width:100%;height:180px}
+#hqView .ov-empty{padding:11px;border:1px solid #ddd;border-radius:8px;background:#fafafa;
+                  color:#666;font-size:13px}
+#hqView .ov-table{overflow-x:auto;margin-top:12px}
+#hqView .ov-table table{border-collapse:collapse;width:100%;font-size:13px}
+#hqView .ov-table th,#hqView .ov-table td{border:1px solid #e0e0e0;padding:6px 8px;
+                                          text-align:right;white-space:nowrap}
+#hqView .ov-table th{background:#f6f6f6;font-weight:600;font-size:12px;color:#555}
+#hqView .ov-table th:first-child,#hqView .ov-table td:first-child{text-align:left}
+#hqView .ov-table th.ov-sortable{cursor:pointer;-webkit-user-select:none;user-select:none}
+#hqView .ov-table th.ov-sortable:hover{background:#ededed}
+#hqView .ov-table th.ov-on{color:#111}
+#hqView .ov-table .ov-arrow{margin-left:5px;font-size:10px;color:#1e7e34}
+#hqView .ov-pinnote{margin:8px 0 0;font-size:12px;color:#666}
+/* ★★ The unread row. It is LOUD on purpose: a shop nobody could read must not
+       be mistakable for a shop that sold nothing. */
+#hqView .ov-table tr.ov-unread td{background:#fdecea;color:#8c2019}
+#hqView .ov-table tr.ov-unread td:first-child{border-left:4px solid #c0392b;font-weight:600}
+#hqView .ov-flag{margin-left:8px;font-size:11px;font-weight:700;color:#fff;background:#c0392b;
+                 border-radius:999px;padding:2px 8px;white-space:nowrap}
 @media(max-width:560px){#hqView .hq-days input{width:70px}}
 </style>
 <script>
@@ -4422,6 +4484,418 @@ function stopDashboard(){
 
     hqRenderDayRows();
     hqLoadStores();
+  };
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     THE HQ OVERVIEW COVER. Additive in every direction: its own IIFE, its own
+     ov-/hqOv- names, and it WRAPS window.showHqView rather than editing it, so
+     the three screens that were here first are not touched by a single line.
+     ★★ READ ONLY. Two actions, listStores and getStoreWeek, neither of which
+        writes anything anywhere. No button in here sends.
+     ★★ THIS SECTION ADDS NO EXTERNAL RESOURCE. The chart is inline SVG built
+        with createElementNS: no library, no <script src>, no <link>, no image,
+        no CDN, nothing fetched from anywhere.
+     ★ To be accurate about the FILE rather than about this section: the page is
+       not fully self-contained today — the <head> already pulls Google Fonts
+       over a <link>. That was here before and is left alone. What is claimed
+       above is only that nothing new was added to it.
+     ════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  // ★★ SIX AT A TIME. Nineteen requests fired at once is nineteen concurrent
+  //    Apps Script executions on one project; six keeps the fan-out honest and
+  //    still finishes in a fraction of the serial time.
+  var OV_CONCURRENCY = 6;
+
+  // ★★ THE BACKEND'S OWN CEILING, not a season guess and not a typed date.
+  //    getStoreWeek refuses anything over API_WEEK_MAX_DAYS with
+  //    range_too_long, so the widest legal window is asked for and the chart
+  //    then starts at the EARLIEST DAY ANY STORE ACTUALLY RETURNED.
+  var OV_MAX_DAYS = 31;
+
+  var ovEl = {};
+  var ovRan = false;
+
+  // ★ The rows exactly as they were read, kept so a header click re-sorts what
+  //   is already on the device instead of asking nineteen shops again.
+  var ovRows = [];
+  var ovSortKey = 'season';
+  var ovSortDir = -1;               // -1 = high → low, 1 = low → high
+
+  function ovGrab(id) { return document.getElementById(id); }
+  function ovPad(n) { return (n < 10 ? '0' : '') + n; }
+
+  /** Today in Asia/Kuala_Lumpur, the zone the backend stamps rows in. */
+  function ovToday() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur',
+      year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  }
+
+  /** 'yyyy-MM-dd' plus n days, on the calendar and never on the clock. */
+  function ovShift(dateText, days) {
+    var d = new Date(Date.UTC(Number(dateText.substring(0, 4)),
+                              Number(dateText.substring(5, 7)) - 1,
+                              Number(dateText.substring(8, 10))));
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.getUTCFullYear() + '-' + ovPad(d.getUTCMonth() + 1) + '-' + ovPad(d.getUTCDate());
+  }
+
+  function ovEsc(v) {
+    return String(v === null || v === undefined ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** A ringgit figure, or the em dash. ★ null is NEVER rendered as 0. */
+  function ovMoney(v) {
+    if (typeof v !== 'number' || !isFinite(v)) { return '—'; }
+    return 'RM ' + v.toLocaleString(undefined, { minimumFractionDigits: 2,
+                                                 maximumFractionDigits: 2 });
+  }
+
+  // -------------------------------------------------------------------------
+  // Fetching — six in flight, and the wall clock around the whole fan-out
+  // -------------------------------------------------------------------------
+
+  /**
+   * Run `jobs` with at most `limit` in flight. Resolves when every one has
+   * settled — a rejection becomes a result, never an abandoned run.
+   */
+  async function ovPool(jobs, limit, onEach) {
+    var out = new Array(jobs.length);
+    var next = 0;
+    async function worker() {
+      while (next < jobs.length) {
+        var mine = next++;
+        try {
+          out[mine] = await jobs[mine]();
+        } catch (err) {
+          out[mine] = { ok: false, text: String(err && err.message ? err.message : err) };
+        }
+        onEach();
+      }
+    }
+    var crew = [];
+    for (var w = 0; w < Math.min(limit, jobs.length); w++) { crew.push(worker()); }
+    await Promise.all(crew);
+    return out;
+  }
+
+  async function ovLoad() {
+    ovEl.progress.textContent = 'Loading the store list…';
+
+    var listed = await window.kdSend({ action: 'listStores' });
+    if (listed.verdict !== 'ok' || !listed.data || !listed.data.stores) {
+      ovEl.progress.textContent = 'Could not load the store list.';
+      ovEl.table.innerHTML = '<p class="ov-empty">The store list did not come back, so there ' +
+                             'is nothing to show yet. Nothing was sent anywhere.</p>';
+      return;
+    }
+    var names = listed.data.stores;
+    var total = names.length;
+
+    var end = ovToday();
+    var start = ovShift(end, -(OV_MAX_DAYS - 1));
+
+    var doneCount = 0;
+    ovEl.progress.textContent = '0 / ' + total;
+
+    var jobs = [];
+    for (var i = 0; i < total; i++) {
+      jobs.push((function (name) {
+        return function () {
+          return window.kdSend({ action: 'getStoreWeek', store: name,
+                                 start_date: start, end_date: end });
+        };
+      })(names[i]));
+    }
+
+    // ★★★ THE MEASUREMENT. t0 is taken immediately before the first request is
+    //     dispatched and t1 the moment the last one has settled, so the number
+    //     in the corner is the whole fan-out and not one request.
+    var t0 = Date.now();
+    var replies = await ovPool(jobs, OV_CONCURRENCY, function () {
+      doneCount++;
+      ovEl.progress.textContent = doneCount + ' / ' + total;
+    });
+    var elapsed = Date.now() - t0;
+
+    ovEl.timing.innerHTML = 'first request → last reply: <b>' + elapsed + ' ms</b>' +
+                            ' · ' + OV_CONCURRENCY + ' at a time';
+    ovRender(names, replies, start, end);
+  }
+
+  // -------------------------------------------------------------------------
+  // Rendering
+  // -------------------------------------------------------------------------
+
+  function ovRender(names, replies, askedStart, askedEnd) {
+    var rows = [];
+    var todaySum = 0, seasonSum = 0;
+    var todayCount = 0, seasonCount = 0, reportedToday = 0;
+    var byDate = {};
+    var earliest = null;
+
+    for (var i = 0; i < names.length; i++) {
+      var r = replies[i];
+      var data = (r && r.verdict === 'ok' && r.data && r.data.ok === true) ? r.data : null;
+
+      if (data === null) {
+        // ★★★ COULD NOT BE READ. Not zero, not blank, not hidden, and it is
+        //     never folded into a total.
+        rows.push({ name: names[i], unread: true, today: null, season: null });
+        continue;
+      }
+
+      var today = (typeof data.today_sales === 'number' && isFinite(data.today_sales))
+                    ? data.today_sales : null;
+      // ★ season_total_unavailable means the shop has no EVENT_NAME on file:
+      //   the season is unknown, so it shows as an em dash and is left out of
+      //   the total rather than counted as nothing.
+      var season = (data.season_total_unavailable === true ||
+                    typeof data.season_total !== 'number' ||
+                    !isFinite(data.season_total)) ? null : data.season_total;
+
+      if (today !== null) { todaySum += today; todayCount++; reportedToday++; }
+      if (season !== null) { seasonSum += season; seasonCount++; }
+
+      var days = (Object.prototype.toString.call(data.days) === '[object Array]')
+                   ? data.days : [];
+      for (var d = 0; d < days.length; d++) {
+        var day = days[d];
+        if (!day || typeof day.date !== 'string') { continue; }
+        if (typeof day.daily_sales !== 'number' || !isFinite(day.daily_sales)) { continue; }
+        byDate[day.date] = (byDate[day.date] || 0) + day.daily_sales;
+        if (earliest === null || day.date < earliest) { earliest = day.date; }
+      }
+
+      rows.push({ name: names[i], unread: false, today: today, season: season });
+    }
+
+    // ★ The range shown is the earliest day that actually came back, not the
+    //   day that was asked for — an empty first fortnight is not a range.
+    ovEl.range.textContent = ' · ' + (earliest === null ? askedStart : earliest) +
+                             ' → ' + askedEnd;
+
+    ovEl.tiles.innerHTML =
+      ovTile('Today · all stores', ovMoney(todayCount === 0 ? null : todaySum)) +
+      ovTile('Season to date', ovMoney(seasonCount === 0 ? null : seasonSum)) +
+      ovTile('Stores reported today', reportedToday + ' of ' + names.length);
+
+    // ★★ WHAT THE TOTALS COVER, in words, right underneath them. A total that
+    //    quietly excluded two shops and did not say so is a wrong total.
+    var unreadCount = 0;
+    for (var u = 0; u < rows.length; u++) { if (rows[u].unread) { unreadCount++; } }
+    ovEl.cover.className = 'ov-cover' + (unreadCount > 0 ? ' short' : '');
+    ovEl.cover.textContent = 'Today covers ' + todayCount + ' of ' + names.length +
+      ' stores · Season covers ' + seasonCount + ' of ' + names.length + ' stores' +
+      (unreadCount > 0 ? ' · ' + unreadCount + ' store(s) could not be read and are NOT '
+                       + 'counted in either total' : '');
+
+    ovChart(byDate);
+    // ★ Default: Season, high to low. Set once here so the first paint and a
+    //   header click go through exactly the same code.
+    ovRows = rows;
+    ovTable();
+  }
+
+  function ovTile(label, value) {
+    return '<div class="ov-tile"><div class="ov-label">' + ovEsc(label) + '</div>' +
+           '<div class="ov-value">' + ovEsc(value) + '</div></div>';
+  }
+
+  /**
+   * ★★★ A ROW THAT IS PINNED NEVER SORTS. Two kinds qualify: a store that could
+   *     not be read at all, and a store whose season is unknown because it has
+   *     no EVENT_NAME on file. Sorting by money would drop both of them to the
+   *     bottom among the shops that genuinely took nothing, and telling those
+   *     two apart is the entire reason this page exists. They stay at the top,
+   *     in the order listStores gave them, whatever the sort says.
+   * ★ A null today_sales is NOT pinned. "Has not submitted yet" is an ordinary
+   *   state of an ordinary trading day, not a failure to read.
+   */
+  function ovIsPinned(r) {
+    return r.unread === true || r.season === null;
+  }
+
+  /** ★ null sorts as 0 but still PRINTS as an em dash — the cell is unchanged. */
+  function ovSortValue(r, key) {
+    var v = (key === 'today') ? r.today : r.season;
+    return (typeof v === 'number' && isFinite(v)) ? v : 0;
+  }
+
+  function ovSorted() {
+    var pinned = [], rest = [];
+    for (var i = 0; i < ovRows.length; i++) {
+      if (ovIsPinned(ovRows[i])) { pinned.push(ovRows[i]); } else { rest.push(ovRows[i]); }
+    }
+    rest.sort(function (a, b) {
+      if (ovSortKey === 'store') {
+        return ovSortDir * String(a.name).localeCompare(String(b.name));
+      }
+      var diff = ovSortValue(a, ovSortKey) - ovSortValue(b, ovSortKey);
+      // ★ Ties fall back to the name, so equal figures do not shuffle between
+      //   renders and make the table look like it is changing when it is not.
+      if (diff === 0) { return String(a.name).localeCompare(String(b.name)); }
+      return ovSortDir * diff;
+    });
+    return pinned.concat(rest);
+  }
+
+  function ovHead(key, label) {
+    var on = (ovSortKey === key);
+    return '<th class="ov-sortable' + (on ? ' ov-on' : '') + '" data-ovkey="' + key + '">' +
+           ovEsc(label) +
+           (on ? '<span class="ov-arrow">' + (ovSortDir === -1 ? '▼' : '▲') + '</span>' : '') +
+           '</th>';
+  }
+
+  function ovTable() {
+    var rows = ovSorted();
+    var pinnedCount = 0;
+    for (var p = 0; p < rows.length; p++) { if (ovIsPinned(rows[p])) { pinnedCount++; } }
+
+    var html = '<table><thead><tr>' +
+               ovHead('store', 'Store') + ovHead('today', 'Today') +
+               ovHead('season', 'Season') +
+               '</tr></thead><tbody>';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      // ★★★ EVERY STORE IS LISTED. Nothing is filtered out, ever.
+      html += '<tr' + (r.unread ? ' class="ov-unread"' : '') + '>' +
+              '<td>' + ovEsc(r.name) +
+              (r.unread ? '<span class="ov-flag">Not read</span>' : '') + '</td>' +
+              '<td>' + ovEsc(ovMoney(r.today)) + '</td>' +
+              '<td>' + ovEsc(ovMoney(r.season)) + '</td></tr>';
+    }
+    html += '</tbody></table>';
+    if (pinnedCount > 0) {
+      html += '<p class="ov-pinnote">' + pinnedCount + ' store(s) held at the top: they could ' +
+              'not be read, or their season is unknown. Sorting never moves them down among ' +
+              'the shops that took nothing.</p>';
+    }
+    ovEl.table.innerHTML = html;
+
+    var heads = ovEl.table.querySelectorAll('th.ov-sortable');
+    for (var h = 0; h < heads.length; h++) {
+      heads[h].addEventListener('click', ovHeadClick);
+    }
+  }
+
+  function ovHeadClick(ev) {
+    var key = ev.currentTarget.getAttribute('data-ovkey');
+    if (key === ovSortKey) {
+      ovSortDir = -ovSortDir;
+    } else {
+      ovSortKey = key;
+      // ★ Names read best A→Z; money reads best biggest-first.
+      ovSortDir = (key === 'store') ? 1 : -1;
+    }
+    ovTable();
+  }
+
+  // -------------------------------------------------------------------------
+  // The chart — inline SVG, built by hand. ★ No library, no external anything.
+  // -------------------------------------------------------------------------
+
+  function ovChart(byDate) {
+    var dates = [];
+    for (var k in byDate) { if (Object.prototype.hasOwnProperty.call(byDate, k)) { dates.push(k); } }
+    dates.sort();
+
+    // ★ No points is a sentence, not an empty pair of axes.
+    if (dates.length === 0) {
+      ovEl.chartBox.innerHTML = '<p class="ov-empty">No data yet.</p>';
+      return;
+    }
+
+    var NS = 'http://www.w3.org/2000/svg';
+    var W = 720, H = 180, PAD_L = 8, PAD_R = 8, PAD_T = 12, PAD_B = 20;
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('preserveAspectRatio', 'none');
+
+    var top = 0;
+    for (var i = 0; i < dates.length; i++) { if (byDate[dates[i]] > top) { top = byDate[dates[i]]; } }
+    if (top <= 0) { top = 1; }
+
+    var plotW = W - PAD_L - PAD_R;
+    var plotH = H - PAD_T - PAD_B;
+    var step = (dates.length === 1) ? 0 : plotW / (dates.length - 1);
+
+    var base = document.createElementNS(NS, 'line');
+    base.setAttribute('x1', PAD_L); base.setAttribute('x2', W - PAD_R);
+    base.setAttribute('y1', PAD_T + plotH); base.setAttribute('y2', PAD_T + plotH);
+    base.setAttribute('stroke', '#e0e0e0');
+    svg.appendChild(base);
+
+    var pts = [];
+    for (var p = 0; p < dates.length; p++) {
+      var x = PAD_L + (step === 0 ? plotW / 2 : step * p);
+      var y = PAD_T + plotH - (byDate[dates[p]] / top) * plotH;
+      pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+    }
+
+    var line = document.createElementNS(NS, 'polyline');
+    line.setAttribute('points', pts.join(' '));
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', '#1e7e34');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(line);
+
+    // ★ Two end labels only. Nineteen dates along an axis is unreadable on a
+    //   tablet, and the range is already spelled out beside the heading.
+    var lo = document.createElementNS(NS, 'text');
+    lo.setAttribute('x', PAD_L); lo.setAttribute('y', H - 5);
+    lo.setAttribute('font-size', '11'); lo.setAttribute('fill', '#777');
+    lo.textContent = dates[0];
+    svg.appendChild(lo);
+
+    var hi = document.createElementNS(NS, 'text');
+    hi.setAttribute('x', W - PAD_R); hi.setAttribute('y', H - 5);
+    hi.setAttribute('text-anchor', 'end');
+    hi.setAttribute('font-size', '11'); hi.setAttribute('fill', '#777');
+    hi.textContent = dates[dates.length - 1];
+    svg.appendChild(hi);
+
+    var peak = document.createElementNS(NS, 'text');
+    peak.setAttribute('x', PAD_L); peak.setAttribute('y', PAD_T);
+    peak.setAttribute('font-size', '11'); peak.setAttribute('fill', '#777');
+    peak.textContent = 'peak ' + ovMoney(top);
+    svg.appendChild(peak);
+
+    ovEl.chartBox.innerHTML = '';
+    ovEl.chartBox.className = 'ov-chart';
+    ovEl.chartBox.appendChild(svg);
+  }
+
+  // -------------------------------------------------------------------------
+  // Wiring. ★★ showHqView is WRAPPED, not edited.
+  // -------------------------------------------------------------------------
+
+  var ovPrevShow = window.showHqView;
+  window.showHqView = function (store) {
+    if (typeof ovPrevShow === 'function') { ovPrevShow(store); }
+
+    ovEl.progress = ovGrab('hqOvProgress');
+    ovEl.timing = ovGrab('hqOvTiming');
+    ovEl.range = ovGrab('hqOvRange');
+    ovEl.tiles = ovGrab('hqOvTiles');
+    ovEl.cover = ovGrab('hqOvCover');
+    ovEl.chartBox = ovGrab('hqOvChartBox');
+    ovEl.table = ovGrab('hqOvTable');
+    if (!ovEl.progress) { return; }
+
+    // ★ Once per session. Re-showing the view must not fire nineteen requests
+    //   again; refreshing is a button, and a button is the next cut.
+    if (ovRan) { return; }
+    ovRan = true;
+    ovLoad();
   };
 })();
 </script>
