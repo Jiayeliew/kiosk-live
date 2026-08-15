@@ -607,8 +607,9 @@
              already here; not one line of those three is touched, and they are
              not renumbered. Everything in this section is id-prefixed hqOv or
              class-prefixed ov-, so nothing below can collide with it.
-         ★ READ ONLY. It calls listStores and getStoreWeek, both of which write
-           nothing anywhere. There is no button in here that sends. -->
+         ★ READ ONLY. It calls getHqOverview on load, and listStores plus
+           getStoreWeek behind the Re-read button. None of the three writes
+           anything anywhere. -->
     <section class="hq-card" id="hqOverview">
       <div class="ov-head">
         <h2>Overview<small id="hqOvRange"></small></h2>
@@ -617,11 +618,16 @@
           <div id="hqOvTiming"></div>
         </div>
       </div>
-      <p class="hq-hint">Every store, asked one at a time and read straight from its own
-        file. Nothing here is cached and nothing here writes.</p>
+      <p class="hq-hint">Read in one request from HQ DATA, the mirror every submission copies
+        itself into. Re-read goes back to the store files themselves. Neither writes.</p>
+      <div class="ov-source-row">
+        <p class="ov-source" id="hqOvSource"></p>
+        <button type="button" class="ov-reread" id="hqOvReread">Re-read every store</button>
+      </div>
       <div class="ov-tiles" id="hqOvTiles"></div>
       <p class="ov-cover" id="hqOvCover"></p>
       <div id="hqOvChartBox"></div>
+      <div class="ov-note" id="hqOvTableNote"></div>
       <div class="ov-table" id="hqOvTable"></div>
     </section>
 
@@ -1056,7 +1062,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 751f1eb">751f1eb</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -3671,6 +3677,17 @@ function stopDashboard(){
 #hqView .ov-table th.ov-on{color:#111}
 #hqView .ov-table .ov-arrow{margin-left:5px;font-size:10px;color:#1e7e34}
 #hqView .ov-pinnote{margin:8px 0 0;font-size:12px;color:#666}
+/* ★ The provenance line and its button. The two sources must never look the
+   same: the mirror is grey and dated, the live read is green and says so. */
+#hqView .ov-source-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0 0}
+#hqView .ov-source{margin:0;font-size:12px;color:#666}
+#hqView .ov-source.ov-live{color:#1e7e34;font-weight:600}
+#hqView .ov-reread{margin-left:auto;font-size:12px;padding:6px 12px;border:1px solid #cfcfcf;
+  border-radius:8px;background:#f6f6f6;color:#111;cursor:pointer;font-family:inherit}
+#hqView .ov-reread:hover:not(:disabled){background:#ededed}
+#hqView .ov-reread:disabled{opacity:.55;cursor:default}
+#hqView .ov-note:empty{display:none}
+#hqView .ov-note{margin-top:12px}
 /* ★★ The unread row. It is LOUD on purpose: a shop nobody could read must not
        be mistakable for a shop that sold nothing. */
 #hqView .ov-table tr.ov-unread td{background:#fdecea;color:#8c2019}
@@ -4492,8 +4509,11 @@ function stopDashboard(){
      THE HQ OVERVIEW COVER. Additive in every direction: its own IIFE, its own
      ov-/hqOv- names, and it WRAPS window.showHqView rather than editing it, so
      the three screens that were here first are not touched by a single line.
-     ★★ READ ONLY. Two actions, listStores and getStoreWeek, neither of which
-        writes anything anywhere. No button in here sends.
+     ★★ READ ONLY. Three actions now — getHqOverview on load, and listStores
+        plus getStoreWeek behind Re-read — and not one of them writes anything
+        anywhere. The one button in here re-READS; nothing in this section can
+        send, and rebuildHqData is a hand-run editor function that no screen
+        has ever been able to reach.
      ★★ THIS SECTION ADDS NO EXTERNAL RESOURCE. The chart is inline SVG built
         with createElementNS: no library, no <script src>, no <link>, no image,
         no CDN, nothing fetched from anywhere.
@@ -4525,6 +4545,16 @@ function stopDashboard(){
   var ovRows = [];
   var ovSortKey = 'season';
   var ovSortDir = -1;               // -1 = high → low, 1 = low → high
+
+  // ★ One flag, so a double tap on Re-read cannot start a second fan-out while
+  //   the first nineteen are still in flight. The button is disabled too; this
+  //   is the belt behind that brace.
+  var ovBusy = false;
+
+  // ★ Counts completed paints. Re-read uses it to tell "the fan-out repainted
+  //   the page" from "the fan-out gave up before it painted anything", without
+  //   editing one line of the fan-out itself.
+  var ovPaintSeq = 0;
 
   function ovGrab(id) { return document.getElementById(id); }
   function ovPad(n) { return (n < 10 ? '0' : '') + n; }
@@ -4630,13 +4660,149 @@ function stopDashboard(){
   }
 
   // -------------------------------------------------------------------------
+  // The mirror read — ONE request, and this page's default path
+  // -------------------------------------------------------------------------
+
+  /**
+   * getHqOverview: the whole chain in one round trip, out of HQ DATA.
+   *
+   * ★★★ WHAT COMES BACK IS A COPY, NOT THE SHOPS. Every figure in HQ DATA was
+   *     written there by a submission, so it is exactly as fresh as the last
+   *     one that landed — minutes old, or a day old, or older for a shop that
+   *     has not sold since. That is the whole reason the source line exists and
+   *     says WHEN. The Re-read button is the way back to the files themselves.
+   * ★★ ONE REQUEST. This replaces nineteen; the fan-out below is not deleted,
+   *    it is now behind the button.
+   */
+  async function ovLoadMirror() {
+    ovEl.progress.textContent = 'Reading HQ DATA…';
+    ovEl.timing.textContent = '';
+
+    var t0 = Date.now();
+    var res = await window.kdSend({ action: 'getHqOverview' });
+    var elapsed = Date.now() - t0;
+
+    // ★ A failed read leaves the page standing and says what to do next. It is
+    //   never a blank screen and never a thrown error (KW-070).
+    if (res.verdict !== 'ok' || !res.data || res.data.ok !== true) {
+      ovEl.progress.textContent = 'Could not read HQ DATA.';
+      ovEl.source.className = 'ov-source';
+      ovEl.source.textContent = 'HQ DATA did not answer.';
+      ovEl.note.innerHTML = '';
+      ovEl.table.innerHTML = '<p class="ov-empty">HQ DATA did not come back, so there is ' +
+                             'nothing to show yet. Nothing was sent anywhere. Press ' +
+                             '"Re-read every store" to read the store files directly ' +
+                             'instead.</p>';
+      return;
+    }
+
+    ovEl.progress.textContent = 'HQ DATA · one request';
+    ovEl.timing.innerHTML = 'request → reply: <b>' + elapsed + ' ms</b>';
+    ovPaint(ovMirrorView(res.data));
+  }
+
+  /**
+   * One getHqOverview reply, turned into the same view model the fan-out
+   * produces. ★ It only maps; every figure is the backend's own.
+   */
+  function ovMirrorView(d) {
+    var replyRows = (Object.prototype.toString.call(d.rows) === '[object Array]')
+                      ? d.rows : [];
+    var today = ovToday();
+    var rows = [];
+    var newest = '';
+
+    for (var i = 0; i < replyRows.length; i++) {
+      var r = replyRows[i] || {};
+
+      // ★★★ "TODAY" MUST MEAN TODAY. The mirror row carries the last day that
+      //     shop reported, which may well be yesterday. Printing that figure
+      //     under a column headed Today would be this page lying in the one
+      //     cell the boss reads fastest, so it is shown ONLY when the stamped
+      //     day is today; otherwise the cell is the same em dash a shop that
+      //     has not submitted yet already gets.
+      var todaySales = (r.today_date === today &&
+                        typeof r.today_sales === 'number' && isFinite(r.today_sales))
+                         ? r.today_sales : null;
+      var season = (typeof r.season_total === 'number' && isFinite(r.season_total))
+                     ? r.season_total : null;
+
+      // ★★ has_data:false means the MIRROR has nothing for that shop. The row
+      //    stays, flagged, with em dashes — read nothing is not sold nothing
+      //    (KD-083 §3). `unread` is reused rather than reinvented: this table
+      //    already has a colour, a pin and a wording for exactly that state.
+      rows.push({ name: String(r.store === undefined || r.store === null ? '' : r.store),
+                  unread: (r.has_data !== true),
+                  today: todaySales, season: season });
+
+      // ★ Plain string compare is exact for 'yyyy-MM-dd HH:mm:ss', and only for
+      //   it — the one format apiStockStampText_ writes.
+      if (typeof r.written_at === 'string' && r.written_at > newest) { newest = r.written_at; }
+    }
+
+    // ★ The chart sums every season present on a day. The backend deliberately
+    //   does not pick a season for us; a day that carries two of them is one
+    //   point for the chain, and the count is said out loud in the line above.
+    var points = (Object.prototype.toString.call(d.daily_totals) === '[object Array]')
+                   ? d.daily_totals : [];
+    var byDate = {};
+    var seasons = {};
+    var seasonNames = 0;
+    var earliest = null, latest = null;
+    for (var p = 0; p < points.length; p++) {
+      var pt = points[p] || {};
+      if (typeof pt.date !== 'string' || pt.date === '') { continue; }
+      if (typeof pt.total !== 'number' || !isFinite(pt.total)) { continue; }
+      byDate[pt.date] = (byDate[pt.date] || 0) + pt.total;
+      if (earliest === null || pt.date < earliest) { earliest = pt.date; }
+      if (latest === null || pt.date > latest) { latest = pt.date; }
+      var ev = String(pt.event === undefined || pt.event === null ? '' : pt.event);
+      if (seasons[ev] !== true) { seasons[ev] = true; seasonNames++; }
+    }
+
+    var chartNote = '';
+    if (typeof d.daily_unavailable === 'string' && d.daily_unavailable !== '') {
+      chartNote = 'No daily figures in HQ DATA (' + d.daily_unavailable + '), so there is no ' +
+                  'line to draw. The store table below comes from a different tab and is ' +
+                  'unaffected.';
+    }
+
+    var tableNote = '';
+    if (typeof d.hq_data_unavailable === 'string' && d.hq_data_unavailable !== '') {
+      tableNote = 'HQ DATA has no store figures yet (' + d.hq_data_unavailable + '). Every ' +
+                  'store is still listed below, with em dashes and not zeros. Press ' +
+                  '"Re-read every store" to read the store files directly.';
+    }
+    // ★ A stores/rows length disagreement is the backend contradicting itself.
+    //   Said out loud rather than silently preferring one of the two.
+    var listed = (Object.prototype.toString.call(d.stores) === '[object Array]')
+                   ? d.stores : null;
+    if (listed !== null && listed.length !== rows.length) {
+      tableNote += (tableNote === '' ? '' : ' ') + 'HQ DATA returned ' + listed.length +
+                   ' store name(s) but ' + rows.length + ' row(s); the rows are what is shown.';
+    }
+
+    return {
+      rows: rows,
+      byDate: byDate,
+      rangeStart: earliest,
+      rangeEnd: latest,
+      chartNote: chartNote,
+      tableNote: tableNote,
+      source: { live: false,
+                text: 'Mirrored from HQ DATA · as of ' +
+                      (newest === '' ? '(no timestamp in the mirror yet)' : newest) +
+                      (seasonNames > 1 ? ' · ' + seasonNames + ' seasons combined in the chart'
+                                       : '') }
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // Rendering
   // -------------------------------------------------------------------------
 
   function ovRender(names, replies, askedStart, askedEnd) {
     var rows = [];
-    var todaySum = 0, seasonSum = 0;
-    var todayCount = 0, seasonCount = 0, reportedToday = 0;
     var byDate = {};
     var earliest = null;
 
@@ -4660,9 +4826,6 @@ function stopDashboard(){
                     typeof data.season_total !== 'number' ||
                     !isFinite(data.season_total)) ? null : data.season_total;
 
-      if (today !== null) { todaySum += today; todayCount++; reportedToday++; }
-      if (season !== null) { seasonSum += season; seasonCount++; }
-
       var days = (Object.prototype.toString.call(data.days) === '[object Array]')
                    ? data.days : [];
       for (var d = 0; d < days.length; d++) {
@@ -4678,29 +4841,83 @@ function stopDashboard(){
 
     // ★ The range shown is the earliest day that actually came back, not the
     //   day that was asked for — an empty first fortnight is not a range.
-    ovEl.range.textContent = ' · ' + (earliest === null ? askedStart : earliest) +
-                             ' → ' + askedEnd;
+    ovPaint({
+      rows: rows,
+      byDate: byDate,
+      rangeStart: (earliest === null ? askedStart : earliest),
+      rangeEnd: askedEnd,
+      chartNote: '',
+      tableNote: '',
+      source: { live: true,
+                text: 'Live · read straight from all ' + rows.length + ' store files' }
+    });
+  }
+
+  /**
+   * ★★★ THE ONE PAINTER. Both paths end here with the same view model: the HQ
+   *     DATA mirror and the nineteen-file fan-out. There is deliberately no
+   *     second copy of the tiles, the cover line, the chart call or the table —
+   *     two painters would drift, and on the day they disagreed BOTH screens
+   *     would still look perfectly normal.
+   * ★★ THE TOTALS ARE DERIVED FROM `rows`, never passed in. One definition of
+   *    what is counted, so the big numbers cannot disagree with the table
+   *    underneath them whichever path filled it.
+   */
+  function ovPaint(view) {
+    var rows = view.rows;
+    var n = rows.length;
+
+    var todaySum = 0, seasonSum = 0;
+    var todayCount = 0, seasonCount = 0, unreadCount = 0;
+    for (var i = 0; i < n; i++) {
+      if (rows[i].unread) { unreadCount++; }
+      if (typeof rows[i].today === 'number' && isFinite(rows[i].today)) {
+        todaySum += rows[i].today; todayCount++;
+      }
+      if (typeof rows[i].season === 'number' && isFinite(rows[i].season)) {
+        seasonSum += rows[i].season; seasonCount++;
+      }
+    }
+
+    // ★★★ THE SAFETY BELT. The mirror is a copy and the copy has a date on it;
+    //     the live read says so in different words and a different colour. A
+    //     reader must never have to guess which of the two is on the screen.
+    ovEl.source.className = 'ov-source' + (view.source.live ? ' ov-live' : '');
+    ovEl.source.textContent = view.source.text;
+
+    ovEl.range.textContent = (view.rangeStart === null || view.rangeEnd === null)
+      ? '' : (' · ' + view.rangeStart + ' → ' + view.rangeEnd);
 
     ovEl.tiles.innerHTML =
       ovTile('Today · all stores', ovMoney(todayCount === 0 ? null : todaySum)) +
       ovTile('Season to date', ovMoney(seasonCount === 0 ? null : seasonSum)) +
-      ovTile('Stores reported today', reportedToday + ' of ' + names.length);
+      ovTile('Stores reported today', todayCount + ' of ' + n);
 
     // ★★ WHAT THE TOTALS COVER, in words, right underneath them. A total that
     //    quietly excluded two shops and did not say so is a wrong total.
-    var unreadCount = 0;
-    for (var u = 0; u < rows.length; u++) { if (rows[u].unread) { unreadCount++; } }
     ovEl.cover.className = 'ov-cover' + (unreadCount > 0 ? ' short' : '');
-    ovEl.cover.textContent = 'Today covers ' + todayCount + ' of ' + names.length +
-      ' stores · Season covers ' + seasonCount + ' of ' + names.length + ' stores' +
+    ovEl.cover.textContent = 'Today covers ' + todayCount + ' of ' + n +
+      ' stores · Season covers ' + seasonCount + ' of ' + n + ' stores' +
       (unreadCount > 0 ? ' · ' + unreadCount + ' store(s) could not be read and are NOT '
                        + 'counted in either total' : '');
 
-    ovChart(byDate);
+    // ★ A missing chart is a sentence in the chart's place, never a blank pair
+    //   of axes and never a page that fails to open.
+    if (view.chartNote !== '') {
+      ovEl.chartBox.className = '';
+      ovEl.chartBox.innerHTML = '<p class="ov-empty">' + ovEsc(view.chartNote) + '</p>';
+    } else {
+      ovChart(view.byDate);
+    }
+
+    ovEl.note.innerHTML = (view.tableNote === '')
+      ? '' : '<p class="ov-empty">' + ovEsc(view.tableNote) + '</p>';
+
     // ★ Default: Season, high to low. Set once here so the first paint and a
     //   header click go through exactly the same code.
     ovRows = rows;
     ovTable();
+    ovPaintSeq++;
   }
 
   function ovTile(label, value) {
@@ -4889,14 +5106,54 @@ function stopDashboard(){
     ovEl.cover = ovGrab('hqOvCover');
     ovEl.chartBox = ovGrab('hqOvChartBox');
     ovEl.table = ovGrab('hqOvTable');
+    ovEl.source = ovGrab('hqOvSource');
+    ovEl.note = ovGrab('hqOvTableNote');
+    ovEl.reread = ovGrab('hqOvReread');
     if (!ovEl.progress) { return; }
 
-    // ★ Once per session. Re-showing the view must not fire nineteen requests
-    //   again; refreshing is a button, and a button is the next cut.
+    // ★ Once per session. Re-showing the view must not fire the read again;
+    //   refreshing is the button below, and only the button.
     if (ovRan) { return; }
     ovRan = true;
-    ovLoad();
+    if (ovEl.reread) { ovEl.reread.addEventListener('click', ovReread); }
+    ovLoadMirror();
   };
+
+  /**
+   * The Re-read button: the nineteen-file fan-out, unchanged, now on demand.
+   *
+   * ★★★ IT READS. getStoreWeek and listStores write nothing, and there is no
+   *     path from this button to rebuildHqData — that is a hand-run editor
+   *     function with no action behind it, so no screen can reach it at all.
+   * ★★ THE BUTTON IS DISABLED FOR THE WHOLE RUN, and `ovBusy` guards it a
+   *    second time. A double tap would otherwise put thirty-eight requests
+   *    through a six-at-a-time pool and paint whichever finished last.
+   */
+  async function ovReread() {
+    if (ovBusy) { return; }
+    ovBusy = true;
+    ovEl.reread.disabled = true;
+    ovEl.reread.textContent = 'Re-reading…';
+    ovEl.source.className = 'ov-source';
+    ovEl.source.textContent = 'Re-reading every store file…';
+    var seenPaints = ovPaintSeq;
+    try {
+      await ovLoad();
+      // ★ The fan-out gives up without painting when the store list does not
+      //   come back. Saying so beats leaving "Mirrored from HQ DATA · as of …"
+      //   sitting over a table that now says something else entirely.
+      if (ovPaintSeq === seenPaints) {
+        ovEl.source.className = 'ov-source';
+        ovEl.source.textContent = 'The live re-read did not complete. Nothing was sent.';
+      }
+    } finally {
+      // ★ finally, so a failed read gives the button back. A page that could
+      //   only be retried by reloading it is a page nobody retries.
+      ovBusy = false;
+      ovEl.reread.disabled = false;
+      ovEl.reread.textContent = 'Re-read every store';
+    }
+  }
 })();
 </script>
 
