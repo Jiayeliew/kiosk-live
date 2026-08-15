@@ -596,6 +596,18 @@
        network call of any kind — every request goes through kdSend(), which
        is the existing plumbing.
      ════════════════════════════════════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════════════════════════════════════
+     THE NAV BAR. A SIBLING of #hqView and #supplyView, never inside either, so
+     not one line of those two screens changes shape because of it.
+     ★★ IT SWITCHES DISPLAY AND NOTHING ELSE. No action is sent when a tab is
+        tapped: both panes are already built and already hold their data, and
+        the overview's six-second read must not be paid for twice (KD-033).
+     ★★ THE TAB LIST IS DATA. NAV_TABS at the foot of this file is walked; a
+        product-stats page or a photo page is one more entry in that array.
+     ★ Empty on purpose — every button in here is rendered from that array.
+     ════════════════════════════════════════════════════════════════════════ -->
+<nav id="hqNav" class="hq-nav hidden" aria-label="Sections"></nav>
+
 <div id="hqView" class="hidden">
   <div class="topbar">
     <div class="brand">Tong Ah HQ<span id="hqWho"></span></div>
@@ -1062,7 +1074,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 8a34e24">8a34e24</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -1212,6 +1224,12 @@
    *    the promoter screen rather than on somebody else's.
    */
   function showSessionView(store, role) {
+    // ★★ RECORDED, NEVER COMPUTED. The nav bar at the foot of this file needs
+    //    the role the SERVER decided, and this argument — straight off the
+    //    login/whoami reply — is the only place the page ever holds it. It is
+    //    stored and nothing else: no branch below changes, and nothing anywhere
+    //    reads a store name to guess a role (KD-071).
+    window.kdRole = role;
     // ★★ THE DO DESK, AND NOTHING ELSE (KD-071, KB-083 step 5). FACTORY is the
     //    second reserved STORES row; the server decides the role from the store
     //    name signed into the token (src/Api.js apiRoleForStore_) and this page
@@ -5019,6 +5037,73 @@ function stopDashboard(){
   // The chart — inline SVG, built by hand. ★ No library, no external anything.
   // -------------------------------------------------------------------------
 
+  /**
+   * Everything the read-out needs about the line that is on screen NOW, or null
+   * when there is no line. ★★ It is REPLACED on every repaint and emptied when
+   * the chart is a sentence instead of a line, so a tooltip can never quote a
+   * day belonging to a chart that is no longer there.
+   */
+  var ovTipState = null;
+
+  /** The read-out, put away. Safe to call when there is nothing to put away. */
+  function ovTipHide() {
+    if (!ovTipState) { return; }
+    ovTipState.tip.classList.remove('on');
+    ovTipState.dot.setAttribute('visibility', 'hidden');
+  }
+
+  /**
+   * Show the NEAREST plotted day to an x on the screen.
+   *
+   * ★★ NEAREST, NEVER BETWEEN. Halfway between two days it rounds to one of
+   *    them; it does not average them. A figure nobody submitted must not be
+   *    readable off this chart.
+   * ★★ IT ASKS NOTHING OF THE BACKEND. Every number it shows is out of the
+   *    `byDate` map the line itself was drawn from.
+   */
+  function ovTipAt(clientX) {
+    var s = ovTipState;
+    if (!s) { return; }
+    var box = ovEl.chartBox.getBoundingClientRect();
+    var art = s.svg.getBoundingClientRect();
+    if (art.width <= 0) { return; }
+
+    // ★ The svg is stretched to its own width (preserveAspectRatio="none"), so
+    //   the conversion is a fraction of the SVG — not of the card around it,
+    //   which is eight pixels of padding wider on each side and would drag
+    //   every reading towards the middle.
+    var viewX = ((clientX - art.left) / art.width) * s.W;
+    var idx = (s.step === 0) ? 0 : Math.round((viewX - s.PAD_L) / s.step);
+    if (idx < 0) { idx = 0; }
+    if (idx > s.dates.length - 1) { idx = s.dates.length - 1; }
+
+    var value = s.byDate[s.dates[idx]];
+    var px = s.PAD_L + (s.step === 0 ? s.plotW / 2 : s.step * idx);
+    var py = s.PAD_T + s.plotH - (value / s.top) * s.plotH;
+    s.dot.setAttribute('cx', px.toFixed(1));
+    s.dot.setAttribute('cy', py.toFixed(1));
+    s.dot.setAttribute('visibility', 'visible');
+
+    // ★ The date exactly as the sheet spells it, and the money through ovMoney
+    //   — the same formatter the tiles and the table already print.
+    s.tip.textContent = s.dates[idx] + ' · ' + ovMoney(value);
+    s.tip.classList.add('on');
+
+    // ★ Measured only after it is displayed, and then clamped inside the card:
+    //   .ov-chart scrolls on its own axis, so a bubble hanging over the edge
+    //   would be clipped or would grow a scrollbar on a phone.
+    var left = (art.left - box.left) + (px / s.W) * art.width - s.tip.offsetWidth / 2;
+    var maxLeft = box.width - s.tip.offsetWidth - 4;
+    if (left > maxLeft) { left = maxLeft; }
+    if (left < 4) { left = 4; }
+    var topPx = (art.top - box.top) + (py / s.H) * art.height - s.tip.offsetHeight - 10;
+    if (topPx < 4) { topPx = 4; }
+    s.tip.style.left = left + 'px';
+    s.tip.style.top = topPx + 'px';
+  }
+
+  function ovTipMove(ev) { ovTipAt(ev.clientX); }
+
   function ovChart(byDate) {
     var dates = [];
     for (var k in byDate) { if (Object.prototype.hasOwnProperty.call(byDate, k)) { dates.push(k); } }
@@ -5026,6 +5111,10 @@ function stopDashboard(){
 
     // ★ No points is a sentence, not an empty pair of axes.
     if (dates.length === 0) {
+      // ★ The state goes first: innerHTML below throws the old bubble away, and
+      //   a handler that fired in between must find nothing rather than a node
+      //   that is no longer on the page.
+      ovTipState = null;
       ovEl.chartBox.innerHTML = '<p class="ov-empty">No data yet.</p>';
       return;
     }
@@ -5086,9 +5175,43 @@ function stopDashboard(){
     peak.textContent = 'peak ' + ovMoney(top);
     svg.appendChild(peak);
 
+    ovTipState = null;
     ovEl.chartBox.innerHTML = '';
     ovEl.chartBox.className = 'ov-chart';
     ovEl.chartBox.appendChild(svg);
+
+    // ── The read-out. ★ ADDITIVE: the line above is drawn exactly as it was.
+    //    The marker rides the line and the bubble names the day.
+    var dot = document.createElementNS(NS, 'circle');
+    dot.setAttribute('r', '4');
+    dot.setAttribute('fill', '#1e7e34');
+    dot.setAttribute('stroke', '#fff');
+    dot.setAttribute('stroke-width', '1.5');
+    dot.setAttribute('visibility', 'hidden');
+    svg.appendChild(dot);
+
+    var tip = document.createElement('div');
+    tip.className = 'ov-tip';
+    ovEl.chartBox.appendChild(tip);
+
+    ovTipState = { tip: tip, dot: dot, svg: svg, dates: dates, byDate: byDate,
+                   W: W, H: H, PAD_L: PAD_L, PAD_T: PAD_T,
+                   plotW: plotW, plotH: plotH, step: step, top: top };
+
+    // ★★ POINTER EVENTS, SO A FINGER AND A MOUSE ARE ONE PIECE OF CODE. A mouse
+    //    reports pointermove on the way across; a finger reports pointerdown
+    //    where it lands. Nothing calls preventDefault, so a finger that was only
+    //    on its way past still scrolls the page.
+    // ★★ WIRED ONCE, ON THE BOX AND NOT ON THE SVG. The box outlives every
+    //    repaint; the svg inside it does not, and re-adding listeners on each
+    //    paint would stack one more copy of them every Re-read.
+    if (!ovEl.chartBox.dataset.ovtip) {
+      ovEl.chartBox.dataset.ovtip = '1';
+      ovEl.chartBox.addEventListener('pointermove', ovTipMove);
+      ovEl.chartBox.addEventListener('pointerdown', ovTipMove);
+      ovEl.chartBox.addEventListener('pointerleave', ovTipHide);
+      ovEl.chartBox.addEventListener('pointercancel', ovTipHide);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -5669,6 +5792,197 @@ function stopDashboard(){
       el.packBtn.addEventListener('click', function () { supSetTab('packaging'); });
       el.logout.addEventListener('click', function () { window.endSession(); });
     }
+  };
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     THE NAV BAR'S LOOK, AND THE OVERVIEW'S TIDY-UP. Additive: every selector
+     is either the new #hqNav or a #hqView .ov-* / .hq-* rule that already
+     existed and is only being re-spaced. ★ Not one number, column or sentence
+     on any screen is decided here — this file's arithmetic is untouched.
+     ★ Same white card look as the promoter's screens: no dark mode, no
+       back-office chrome, the same #d8d8d8 / #e0e0e0 / #1e7e34 palette.
+     ════════════════════════════════════════════════════════════════════════ -->
+<style>
+/* ─── The bar itself. ★ NOT sticky: #hqView's topbar is already sticky at
+       top:0, and a second sticky bar at the same offset would sit on top of
+       it. The bar scrolls with the page instead of fighting for that strip. */
+#hqNav{display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  padding:10px 14px;background:#fff;border-bottom:1px solid #e0e0e0}
+#hqNav.hidden{display:none}
+#hqNav button{font-family:inherit;font-size:13px;font-weight:600;line-height:1.2;
+  padding:8px 15px;border:1px solid #cfcfcf;border-radius:999px;background:#f6f6f6;
+  color:#444;cursor:pointer}
+#hqNav button:hover{background:#ededed}
+#hqNav button.on{background:#222;border-color:#222;color:#fff}
+
+/* ─── The chart read-out. The bubble lives inside the chart card, so the card
+       becomes its containing block. */
+#hqView .ov-chart{position:relative}
+#hqView .ov-tip{position:absolute;left:0;top:0;display:none;pointer-events:none;
+  background:#222;color:#fff;font-size:12px;font-weight:600;line-height:1.3;
+  padding:5px 9px;border-radius:8px;white-space:nowrap;z-index:2}
+#hqView .ov-tip.on{display:block}
+
+/* ─── Spacing and type only. Nothing below changes a figure or a heading's
+       words; it changes how much air they get and how easily a row is
+       followed across a wide table. */
+#hqView .hq-wrap{padding:16px 12px 28px}
+#hqView .hq-card{margin:14px 0}
+#hqView .hq-card h2{font-size:18px;letter-spacing:-.01em}
+#hqView .hq-hint{line-height:1.55}
+#hqView .ov-tiles{gap:12px;margin:14px 0 6px}
+#hqView .ov-tile{padding:12px 14px}
+#hqView .ov-tile .ov-label{text-transform:uppercase;font-size:11px;font-weight:600;
+  letter-spacing:.06em;color:#666}
+#hqView .ov-table{margin-top:14px}
+#hqView .ov-table th,#hqView .ov-table td{padding:8px 10px}
+#hqView .ov-table th{letter-spacing:.03em}
+/* ★ :not(.ov-unread) is load-bearing. The unread row is red on purpose and a
+     zebra stripe of mine would out-specify it and paint it grey — which is
+     exactly the "could not read" / "sold nothing" confusion that row exists to
+     prevent. Striping and hover both step around it. */
+#hqView .ov-table tbody tr:nth-child(even):not(.ov-unread) td{background:#fafafa}
+#hqView .ov-table tbody tr:hover:not(.ov-unread) td{background:#f1f6f2}
+
+/* ─── Portrait phone. The tables already scroll on their own axis
+       (.ov-table / .hq-week are overflow-x:auto), so nothing has to be
+       squeezed; the tiles stack and the bar's buttons share the width. */
+@media(max-width:560px){
+  #hqNav{padding:8px 10px;gap:6px}
+  #hqNav button{flex:1 1 auto;padding:8px 10px;font-size:12px}
+  #hqView .hq-wrap{padding:12px 8px 24px}
+  #hqView .ov-tile{flex:1 1 100%}
+  #hqView .ov-tile .ov-value{font-size:22px}
+  #hqView .ov-table th,#hqView .ov-table td{padding:7px 8px}
+}
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  /**
+   * ★★ ONE ENTRY PER PANE, AND THE LIST IS THE ONLY PLACE A PANE IS NAMED.
+   *    The product-stats page and the photo page are one more object each —
+   *    a label, the id of the element that holds them, and the roles allowed
+   *    to see them. No branch below counts to two.
+   * ★★ `roles` IS MATCHED AGAINST THE SERVER'S OWN WORD. window.kdRole is the
+   *    `role` field of the login/whoami reply, recorded by showSessionView and
+   *    never computed here. A role nobody has invented yet matches nothing and
+   *    gets no bar — the safe direction, the same one showSessionView takes.
+   * ★ The DO desk's label is the words that screen already calls itself by in
+   *   its own heading, not a new name invented in here.
+   */
+  var NAV_TABS = [
+    { key: 'overview', label: 'Overview',         viewId: 'hqView',     roles: ['hq'] },
+    { key: 'supply',   label: 'Supply · DO desk', viewId: 'supplyView', roles: ['hq', 'factory'] }
+  ];
+
+  var navBar = null;
+  var navCurrent = '';
+
+  function navGrab() {
+    if (!navBar) { navBar = document.getElementById('hqNav'); }
+    return navBar;
+  }
+
+  function navAllowed() {
+    var role = String(window.kdRole === undefined ? '' : window.kdRole);
+    var out = [];
+    for (var i = 0; i < NAV_TABS.length; i++) {
+      if (NAV_TABS[i].roles.indexOf(role) !== -1) { out.push(NAV_TABS[i]); }
+    }
+    return out;
+  }
+
+  /**
+   * ★★★ DISPLAY ONLY. This is the whole of switching: one class on, one class
+   *     off. No action is sent, no reader is called, and neither pane is
+   *     rebuilt — the overview's read costs about six seconds and paying it
+   *     again to come back to a table already on the screen would be waste the
+   *     person switching can see.
+   */
+  function navSelect(key, tabs) {
+    navCurrent = key;
+    for (var i = 0; i < tabs.length; i++) {
+      var view = document.getElementById(tabs[i].viewId);
+      if (!view) { continue; }
+      if (tabs[i].key === key) { view.classList.remove('hidden'); }
+      else { view.classList.add('hidden'); }
+    }
+    var bar = navGrab();
+    var buttons = bar ? bar.querySelectorAll('button') : [];
+    for (var b = 0; b < buttons.length; b++) {
+      var on = buttons[b].getAttribute('data-navkey') === key;
+      buttons[b].className = on ? 'on' : '';
+      buttons[b].setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    window.scrollTo(0, 0);
+  }
+
+  function navClick(ev) {
+    navSelect(ev.currentTarget.getAttribute('data-navkey'), navAllowed());
+  }
+
+  function navMount() {
+    var bar = navGrab();
+    if (!bar) { return; }
+    var tabs = navAllowed();
+
+    // ★★ ONE PANE IS NOT A CHOICE. FACTORY is allowed the DO desk and nothing
+    //    else, so it gets no bar rather than a bar with a single button — and
+    //    the pane showSessionView opened for it is left exactly as it is.
+    if (tabs.length < 2) {
+      bar.innerHTML = '';
+      bar.classList.add('hidden');
+      return;
+    }
+
+    bar.innerHTML = '';
+    for (var i = 0; i < tabs.length; i++) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = tabs[i].label;
+      btn.setAttribute('data-navkey', tabs[i].key);
+      btn.addEventListener('click', navClick);
+      bar.appendChild(btn);
+    }
+    bar.classList.remove('hidden');
+
+    // ★ A tab already chosen survives a re-mount; otherwise the first allowed
+    //   pane opens, which for HQ is the overview it has always landed on.
+    var keep = '';
+    for (var k = 0; k < tabs.length; k++) {
+      if (tabs[k].key === navCurrent) { keep = navCurrent; }
+    }
+    navSelect(keep === '' ? tabs[0].key : keep, tabs);
+  }
+
+  // ─── Wiring. ★★ Both entry points are WRAPPED, not edited, and the bar is
+  //     mounted AFTER the original ran: for HQ the desk un-hides itself on the
+  //     way in, and the mount immediately puts it away behind its tab.
+  var navPrevHq = window.showHqView;
+  window.showHqView = function (store) {
+    if (typeof navPrevHq === 'function') { navPrevHq(store); }
+    navMount();
+  };
+
+  var navPrevSupply = window.showSupplyView;
+  window.showSupplyView = function (store) {
+    if (typeof navPrevSupply === 'function') { navPrevSupply(store); }
+    navMount();
+  };
+
+  // ★ Logging out takes the bar with it. showLoginView hides the two panes; the
+  //   bar is a third sibling and would otherwise sit above the login screen.
+  var navPrevEnd = window.endSession;
+  window.endSession = function () {
+    navCurrent = '';
+    var bar = navGrab();
+    if (bar) { bar.innerHTML = ''; bar.classList.add('hidden'); }
+    if (typeof navPrevEnd === 'function') { navPrevEnd(); }
   };
 })();
 </script>
