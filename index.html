@@ -1074,7 +1074,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 68663f9">68663f9</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -5413,6 +5413,462 @@ function stopDashboard(){
   </div>
 </div>
 
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   THE PRODUCTS PANE. A FOURTH SIBLING of #hqView and #supplyView, never
+   inside either, so not one line of those two screens changes shape.
+   ★ Every rule is scoped to #productsView and every class is pr-*, so
+     nothing in here can reach the overview, the DO desk or the three
+     promoter screens.
+   ★ The values are borrowed, not invented: the same #d8d8d8 card border and
+     10px radius as the DO desk, the same 13px table type as the overview.
+   ════════════════════════════════════════════════════════════════════════ */
+#productsView .pr-wrap{max-width:920px;margin:0 auto;padding:12px}
+#productsView .pr-card{border:1px solid #d8d8d8;border-radius:10px;padding:14px;margin:12px 0;
+  background:#fff}
+#productsView .pr-card h2{margin:0 0 6px;font-size:17px}
+#productsView .pr-hint{margin:0 0 10px;color:#666;font-size:13px;line-height:1.5}
+#productsView .pr-source{margin:10px 0 0;font-size:12px;color:#666}
+#productsView .pr-declared{margin:8px 0 0;font-size:12px;color:#8a6d1f;line-height:1.5}
+#productsView .pr-cover{margin:8px 0 0;font-size:12px;color:#666}
+#productsView .pr-status{margin-top:12px;font-size:13px;color:#555}
+#productsView .pr-status:empty{display:none}
+#productsView .pr-stale{margin-top:10px;padding:9px 11px;border-left:4px solid #b8860b;
+  background:#fdf7e6;font-size:13px;line-height:1.5;color:#5a4708}
+#productsView .pr-stale:empty{display:none}
+#productsView .pr-broken{margin-top:12px;padding:11px;border:2px solid #c0392b;border-radius:8px;
+  background:#fdecea;font-size:13px;line-height:1.5;color:#8c2019}
+#productsView .pr-broken:empty{display:none}
+#productsView .pr-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
+  margin-top:12px}
+#productsView .pr-controls label{font-size:12px;color:#555;font-weight:600}
+#productsView select{padding:9px;font-size:15px;border:1px solid #ccc;border-radius:8px;
+  background:#fff;max-width:100%}
+#productsView .pr-facts{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:#555;
+  margin-top:10px}
+#productsView .pr-facts:empty{display:none}
+#productsView .pr-facts b{color:#111}
+/* ★ The table scrolls inside its own box rather than widening the page — the
+     one thing that keeps a five-column table on a phone held upright. */
+#productsView .pr-table{overflow-x:auto;margin-top:12px}
+#productsView .pr-table table{border-collapse:collapse;width:100%;font-size:13px}
+#productsView .pr-table th,#productsView .pr-table td{border:1px solid #e0e0e0;padding:6px 8px;
+  text-align:right;white-space:nowrap}
+#productsView .pr-table th{background:#f6f6f6;font-weight:600;font-size:12px;color:#555}
+#productsView .pr-table th:first-child,#productsView .pr-table td:first-child,
+#productsView .pr-table th:nth-child(2),#productsView .pr-table td:nth-child(2){text-align:left}
+#productsView .pr-table td.pr-name{white-space:normal;min-width:150px;width:100%}
+/* ★★ THE EM DASH IS COLOURED, THE NOUGHT IS NOT. "could not read" and "none"
+      must not be one glance apart. */
+#productsView .pr-table td.pr-dash{color:#8c2019;font-weight:600}
+#productsView .pr-mark{color:#b8860b;font-weight:700;margin-left:4px}
+#productsView .pr-foot{margin-top:10px;font-size:12px;color:#8a6d1f;line-height:1.5}
+#productsView .pr-foot:empty{display:none}
+@media(max-width:560px){
+  #productsView .pr-wrap{padding:12px 8px 24px}
+  #productsView .pr-table th,#productsView .pr-table td{padding:7px 8px}
+  #productsView .pr-controls select{flex:1 1 100%}
+}
+</style>
+
+<div id="productsView" class="hidden">
+  <div class="pr-wrap">
+    <section class="pr-card">
+      <h2>Products</h2>
+      <!-- ★ Same reason the DO desk carries one: when this tab is open #hqView
+           is hidden, and its topbar's Log out goes with it. -->
+      <button id="prLogoutBtn" class="topbar-logout">Log out</button>
+      <p class="pr-hint">One read of HQ DATA's SKU mirror. Every figure below is added up on
+        this device from the rows that came back — nothing here writes anything, anywhere,
+        and switching store sends nothing.</p>
+      <p class="pr-source" id="prSource"></p>
+      <div class="pr-stale" id="prStale"></div>
+      <!-- ★★★ 2b. The column is a DECLARATION. The promoter typed it into the
+           Sales cell of their own STOCKS file and no server has ever put it
+           beside a physical count, so this page must not call it anything
+           stronger than what it is. -->
+      <p class="pr-declared" id="prDeclared">Declared quantity is the figure the promoter
+        entered in their own STOCKS file. It has never been reconciled against a physical
+        count, so read it as a declaration, not as a settled figure.</p>
+      <div class="pr-controls">
+        <label for="prStoreSel">Store</label>
+        <select id="prStoreSel"></select>
+      </div>
+      <p class="pr-cover" id="prCover"></p>
+      <div class="pr-status" id="prStatus">Not loaded yet.</div>
+      <div class="pr-broken" id="prBroken"></div>
+      <div class="pr-facts" id="prFacts"></div>
+      <div class="pr-table" id="prTable"></div>
+      <p class="pr-foot" id="prFoot"></p>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /**
+   * THE PRODUCTS PANE. ONE call to getHqSku, and everything on the screen
+   * after that is arithmetic done here on the rows it returned.
+   *
+   * ★★★ THE READ IS LAZY AND IT HAPPENS ONCE. Nothing is sent at login; the
+   *     first time this tab is opened it asks, and the reply is kept in
+   *     prRows for the rest of the session. Switching tab and switching store
+   *     both re-render from that array and send nothing — the overview's read
+   *     already costs about six seconds and a second one on the way in would
+   *     be paid by every person who logs in, including those who never open
+   *     this page (KD-033).
+   * ★★ THE ROLE GATE IS NAV_TABS' AND NOBODY ELSE'S. This pane is listed with
+   *    roles:['hq'], matched against window.kdRole — the `role` the SERVER
+   *    decided, recorded by showSessionView. No store name is read here and
+   *    no role is computed here, so FACTORY gets no button and, having only
+   *    the DO desk left, no bar at all.
+   * ★★★ 0 AND "COULD NOT READ" ARE NEVER THE SAME PIXEL. prNum is the only
+   *     test, an unreadable quantity prints an em dash in its own colour, it
+   *     is never added into a total, and any total that had one beside it is
+   *     marked. No row is ever hidden for being unreadable or for being nought.
+   */
+
+  var prEl = {};
+  var prLoaded = false;      // a reply arrived and is being kept
+  var prBusy = false;        // a request is in the air
+  var prRows = [];           // the reply's rows, exactly as they came
+  var prAsOf = null;         // the OLDEST stamp in the copy
+  var prAsOfNewest = null;   // the newest stamp in the copy
+  var prFlag = null;         // hq_sku_unavailable, when the backend sent one
+  var prBroken = '';         // the call itself failed — a different thing from prFlag
+  var prStore = '';          // '' means the whole company
+
+  function prGrab(id) { return document.getElementById(id); }
+
+  function prEsc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /**
+   * ★★★ THE ONE TEST IN THIS PANE THAT SEPARATES A NOUGHT FROM A CELL NOBODY
+   *     COULD READ. The backend already made that distinction — configNumber_
+   *     hands back 0 for a real nought and null for an unreadable cell — and
+   *     this is where the screen keeps it. A number that is a number survives;
+   *     everything else, null included, becomes null and will print as an em
+   *     dash. NaN and Infinity are not numbers a shop counted, so isFinite is
+   *     part of the test and not an afterthought.
+   */
+  function prNum(v) {
+    return (typeof v === 'number' && isFinite(v)) ? v : null;
+  }
+
+  function prText(v) {
+    return (v === null || v === undefined || v === '') ? null : String(v);
+  }
+
+  // ★★ THE PRINTER FOR EVERY QUANTITY ON THIS PAGE. 0 prints "0"; null prints
+  //    an em dash and gets the class that colours it. Never blank, never a
+  //    hidden row.
+  function prQtyCell(v, marked) {
+    if (v === null) { return '<td class="pr-dash">&mdash;</td>'; }
+    return '<td>' + prEsc(v.toLocaleString()) +
+           (marked ? '<span class="pr-mark">&dagger;</span>' : '') + '</td>';
+  }
+
+  // ★ Unreadable-everywhere sorts BELOW every number, 0 included: a SKU that is
+  //   genuinely nought everywhere is a fact and sits at the bottom of the
+  //   numbers, and a SKU nobody could read is not a fact at all.
+  function prByQtyDesc(a, b) {
+    if (a.total === null && b.total === null) { return a.sku < b.sku ? -1 : (a.sku > b.sku ? 1 : 0); }
+    if (a.total === null) { return 1; }
+    if (b.total === null) { return -1; }
+    if (a.total !== b.total) { return b.total - a.total; }
+    return a.sku < b.sku ? -1 : (a.sku > b.sku ? 1 : 0);
+  }
+
+  /**
+   * The whole chain, one line per SKU. ★★ EVERY FIGURE IS SUMMED HERE FROM THE
+   * REPLY'S OWN ROWS. Not one number on this page is written into the file.
+   * ★★ A row whose quantity would not read is counted in `unread` and left OUT
+   *    of the sum — adding it as 0 would be this page inventing a nought.
+   */
+  function prCompanyRows() {
+    var order = [];
+    var bySku = {};
+    for (var i = 0; i < prRows.length; i++) {
+      var r = prRows[i] || {};
+      var sku = prText(r.sku);
+      var key = '#' + (sku === null ? '' : sku);
+      if (!Object.prototype.hasOwnProperty.call(bySku, key)) {
+        bySku[key] = { sku: (sku === null ? '(no SKU on the row)' : sku),
+                       product: null, total: null, unread: 0 };
+        order.push(key);
+      }
+      var e = bySku[key];
+      if (e.product === null) { e.product = prText(r.product); }
+      var q = prNum(r.qty_sold);
+      if (q === null) { e.unread++; }
+      else { e.total = (e.total === null ? 0 : e.total) + q; }
+    }
+    var out = [];
+    for (var k = 0; k < order.length; k++) { out.push(bySku[order[k]]); }
+    out.sort(prByQtyDesc);
+    return out;
+  }
+
+  /** One shop's own rows, straight off the reply — nothing is combined. */
+  function prOneStoreRows(name) {
+    var out = [];
+    for (var i = 0; i < prRows.length; i++) {
+      var r = prRows[i] || {};
+      var who = prText(r.store);
+      if (who === null || who !== name) { continue; }
+      var q = prNum(r.qty_sold);
+      var sku = prText(r.sku);
+      out.push({ sku: (sku === null ? '(no SKU on the row)' : sku),
+                 product: prText(r.product),
+                 total: q,
+                 unread: (q === null) ? 1 : 0,
+                 days: prNum(r.days_counted),
+                 first: prText(r.first_date),
+                 last: prText(r.last_date) });
+    }
+    out.sort(prByQtyDesc);
+    return out;
+  }
+
+  /**
+   * ★★★ THE STORE LIST GROWS OUT OF THE ROWS AND OUT OF NOTHING ELSE. No
+   *     listStores call, no count written into this file. A shop missing from
+   *     the copy is missing from this menu, which is the honest answer: this
+   *     page cannot show a figure it was not sent.
+   */
+  function prStoreNames() {
+    var seen = {};
+    var out = [];
+    for (var i = 0; i < prRows.length; i++) {
+      var n = prText(prRows[i] ? prRows[i].store : null);
+      if (n === null || seen[n] === true) { continue; }
+      seen[n] = true;
+      out.push(n);
+    }
+    out.sort();
+    return out;
+  }
+
+  function prFillStoreMenu(names) {
+    var sel = prEl.storeSel;
+    var keep = prStore;
+    sel.innerHTML = '';
+    var all = document.createElement('option');
+    all.value = '';
+    all.textContent = 'All stores · company total';
+    sel.appendChild(all);
+    for (var i = 0; i < names.length; i++) {
+      var o = document.createElement('option');
+      o.value = names[i];
+      o.textContent = names[i];
+      sel.appendChild(o);
+    }
+    sel.value = keep;
+    if (sel.value !== keep) { prStore = ''; sel.value = ''; }
+  }
+
+  function prDates(row) {
+    if (row.first === null && row.last === null) { return '&mdash;'; }
+    return prEsc((row.first === null ? '—' : row.first) + ' .. ' +
+                 (row.last === null ? '—' : row.last));
+  }
+
+  function prBuildTable(rows, perStore) {
+    if (rows.length === 0) {
+      return '<p class="pr-status">This copy carries no rows to show.</p>';
+    }
+    var h = '<table><thead><tr><th>SKU</th><th>Product</th><th>Declared quantity</th>' +
+            (perStore ? '<th>Days counted</th><th>First .. last date</th>' : '') +
+            '</tr></thead><tbody>';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      h += '<tr><td>' + prEsc(r.sku) + '</td>' +
+           '<td class="pr-name">' + (r.product === null ? '&mdash;' : prEsc(r.product)) + '</td>' +
+           prQtyCell(r.total, r.unread > 0);
+      if (perStore) {
+        h += prQtyCell(r.days, false) + '<td>' + prDates(r) + '</td>';
+      }
+      h += '</tr>';
+    }
+    return h + '</tbody></table>';
+  }
+
+  /**
+   * ★★ SIX-A AND SIX-B ARE NOT THE SAME SENTENCE. prBroken is "the request did
+   *    not come back"; prFlag is "it came back and said the mirror is not
+   *    readable, and which of the three it was". Neither draws a table, because
+   *    a table of noughts under either of them would be a lie with a total.
+   */
+  function prPaint() {
+    if (prBroken !== '') {
+      prEl.status.textContent = '';
+      prEl.broken.textContent = prBroken;
+      prEl.source.textContent = 'HQ DATA did not answer, so this copy has no date.';
+      prEl.stale.textContent = '';
+      prEl.cover.textContent = '';
+      prEl.facts.innerHTML = '';
+      prEl.table.innerHTML = '';
+      prEl.foot.textContent = '';
+      return;
+    }
+    prEl.broken.textContent = '';
+
+    // ★★ 5a. "as of", never "last updated": as_of is the OLDEST stamp in the
+    //    copy, and calling the oldest row's time an update would say the
+    //    opposite of what the number means.
+    prEl.source.textContent = 'Mirrored from HQ DATA · as of ' +
+      (prAsOf === null ? '(no timestamp in the mirror yet)' : prAsOf);
+
+    // ★★★ 5b. A copy stitched out of two different moments says so, with both
+    //     moments printed. Equal stamps say nothing at all.
+    if (prAsOf !== null && prAsOfNewest !== null && prAsOf !== prAsOfNewest) {
+      prEl.stale.textContent = 'Some stores’ figures are older than others in this copy. ' +
+        'Oldest row: ' + prAsOf + ' · newest row: ' + prAsOfNewest + '. The "as of" above is ' +
+        'the oldest, because that is the age this whole copy can honestly claim.';
+    } else {
+      prEl.stale.textContent = '';
+    }
+
+    if (prFlag !== null) {
+      prEl.status.textContent = 'HQ DATA could not hand over the SKU mirror (' + prFlag + '), so ' +
+        'there is nothing to add up and no table is drawn. NO_TAB and HEADER_MISMATCH mean the ' +
+        'mirror needs setupHqData(); EMPTY means it needs rebuildHqSkuTotals(). Nothing was ' +
+        'written by opening this page.';
+      prEl.cover.textContent = '';
+      prEl.facts.innerHTML = '';
+      prEl.table.innerHTML = '';
+      prEl.foot.textContent = '';
+      return;
+    }
+
+    var names = prStoreNames();
+    prFillStoreMenu(names);
+
+    // ★★ 3d. Both numbers are counted off the rows. Nineteen is not written
+    //    anywhere in here: if the copy holds eleven shops it says eleven.
+    prEl.cover.textContent = 'This copy covers ' + names.length + ' store(s) across ' +
+                             prRows.length + ' row(s).';
+
+    var perStore = (prStore !== '');
+    var rows = perStore ? prOneStoreRows(prStore) : prCompanyRows();
+
+    prEl.status.textContent = perStore
+      ? ('Showing ' + prStore + ' · one line per SKU, largest declared quantity first.')
+      : ('Showing every store added together · one line per SKU, largest declared quantity ' +
+         'first. Totals were added up on this device from the ' + prRows.length + ' row(s) above.');
+
+    var unread = 0;
+    var markedSkus = 0;
+    for (var i = 0; i < rows.length; i++) {
+      unread += rows[i].unread;
+      if (rows[i].unread > 0) { markedSkus++; }
+    }
+
+    prEl.facts.innerHTML = perStore
+      ? ('<span>Rows for this store: <b>' + rows.length + '</b></span>')
+      : ('<span>Distinct SKUs: <b>' + rows.length + '</b></span>' +
+         '<span>Stores in this copy: <b>' + names.length + '</b></span>');
+
+    prEl.table.innerHTML = prBuildTable(rows, perStore);
+
+    // ★★ 4d. The count is said out loud rather than left as a dagger nobody
+    //    has a key for.
+    prEl.foot.textContent = (unread === 0)
+      ? ''
+      : (unread + ' row(s) here carry no readable quantity. They print as — , they are NOT ' +
+         'added into any total as zero, and ' + markedSkus + ' line(s) whose total was built ' +
+         'with one of them are marked †. A † total is therefore lower than the truth by ' +
+         'however much those rows held.');
+  }
+
+  /**
+   * ★★★ ONE REQUEST, THE FIRST TIME THIS TAB IS OPENED. prLoaded is set only
+   *     when a reply was actually kept, so a network failure can be retried by
+   *     coming back to the tab, while a reply that arrived — degraded or not —
+   *     is never asked for twice.
+   */
+  async function prLoad() {
+    prBusy = true;
+    prEl.status.textContent = 'Reading HQ DATA’s SKU mirror…';
+    prEl.broken.textContent = '';
+    prEl.table.innerHTML = '';
+    prEl.foot.textContent = '';
+
+    var res = await window.kdSend({ action: 'getHqSku' });
+    prBusy = false;
+
+    if (res.verdict !== 'ok' || !res.data || res.data.ok !== true) {
+      prBroken = 'The request for the SKU mirror did not come back (' + res.verdict + '). This is ' +
+                 'a connection or session problem, NOT a fault in HQ DATA — nothing has been said ' +
+                 'about whether the mirror is readable. Nothing was sent anywhere. Switch away ' +
+                 'and back to this tab to try again.';
+      prPaint();
+      return;
+    }
+
+    var d = res.data;
+    prRows = (Object.prototype.toString.call(d.rows) === '[object Array]') ? d.rows : [];
+    prAsOf = (typeof d.as_of === 'string' && d.as_of !== '') ? d.as_of : null;
+    prAsOfNewest = (typeof d.as_of_newest === 'string' && d.as_of_newest !== '')
+                     ? d.as_of_newest : null;
+    prFlag = (typeof d.hq_sku_unavailable === 'string' && d.hq_sku_unavailable !== '')
+               ? d.hq_sku_unavailable : null;
+    prBroken = '';
+    prLoaded = true;
+    prPaint();
+  }
+
+  function prActivate() {
+    if (prBusy || prLoaded) { return; }
+    prLoad();
+  }
+
+  // ─── Wiring. Every element above this script is already parsed.
+  prEl.source   = prGrab('prSource');
+  prEl.stale    = prGrab('prStale');
+  prEl.cover    = prGrab('prCover');
+  prEl.status   = prGrab('prStatus');
+  prEl.broken   = prGrab('prBroken');
+  prEl.facts    = prGrab('prFacts');
+  prEl.table    = prGrab('prTable');
+  prEl.foot     = prGrab('prFoot');
+  prEl.storeSel = prGrab('prStoreSel');
+
+  // ★★ 3c. Switching store re-renders and sends NOTHING.
+  prEl.storeSel.addEventListener('change', function () {
+    prStore = prEl.storeSel.value;
+    prPaint();
+  });
+
+  prGrab('prLogoutBtn').addEventListener('click', function () { window.endSession(); });
+
+  // ★ Wrapped, not edited — the same idiom the nav bar uses on these two.
+  var prPrevShown = window.kdPaneShown;
+  window.kdPaneShown = function (key) {
+    if (typeof prPrevShown === 'function') { prPrevShown(key); }
+    if (key === 'products') { prActivate(); }
+  };
+
+  // ★★ A NEW LOGIN MUST NOT SEE THE LAST ONE'S COPY. Everything this pane held
+  //    goes when the session does.
+  var prPrevEnd = window.endSession;
+  window.endSession = function () {
+    prLoaded = false; prBusy = false; prRows = []; prAsOf = null; prAsOfNewest = null;
+    prFlag = null; prBroken = ''; prStore = '';
+    prEl.status.textContent = 'Not loaded yet.';
+    prEl.source.textContent = ''; prEl.stale.textContent = ''; prEl.cover.textContent = '';
+    prEl.broken.textContent = ''; prEl.facts.innerHTML = ''; prEl.table.innerHTML = '';
+    prEl.foot.textContent = ''; prEl.storeSel.innerHTML = '';
+    if (typeof prPrevEnd === 'function') { prPrevEnd(); }
+  };
+})();
+</script>
+
 <script>
 (function () {
   'use strict';
@@ -5925,8 +6381,9 @@ function stopDashboard(){
    *   its own heading, not a new name invented in here.
    */
   var NAV_TABS = [
-    { key: 'overview', label: 'Overview',         viewId: 'hqView',     roles: ['hq'] },
-    { key: 'supply',   label: 'Supply · DO desk', viewId: 'supplyView', roles: ['hq', 'factory'] }
+    { key: 'overview', label: 'Overview',         viewId: 'hqView',       roles: ['hq'] },
+    { key: 'products', label: 'Products',         viewId: 'productsView', roles: ['hq'] },
+    { key: 'supply',   label: 'Supply · DO desk', viewId: 'supplyView',   roles: ['hq', 'factory'] }
   ];
 
   var navBar = null;
@@ -5968,6 +6425,14 @@ function stopDashboard(){
       buttons[b].className = on ? 'on' : '';
       buttons[b].setAttribute('aria-selected', on ? 'true' : 'false');
     }
+
+    // ★★ STILL DISPLAY ONLY. This function sends nothing and rebuilds nothing;
+    //    it only says WHICH pane is now in front. A pane that wants to fetch on
+    //    first sight listens here and decides for itself — the products page
+    //    asks once and never again, and the overview and the DO desk do not
+    //    listen at all, so neither of them pays a second read (KD-033).
+    if (typeof window.kdPaneShown === 'function') { window.kdPaneShown(key); }
+
     window.scrollTo(0, 0);
   }
 
