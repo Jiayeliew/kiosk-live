@@ -638,6 +638,17 @@
       </div>
       <div class="ov-tiles" id="hqOvTiles"></div>
       <p class="ov-cover" id="hqOvCover"></p>
+      <!-- ★ ADDITIVE, AND IT IS THE CHART'S ONLY CONTROL. The options are grown
+           from the store names getHqOverview already returned — there is no
+           second listStores call behind this menu and no name is spelled out in
+           here. "All stores" is the default and redraws from the daily_totals
+           already on the device, so coming back to it sends nothing. -->
+      <div class="ov-line-row">
+        <label for="hqOvLineSel">Chart line</label>
+        <select id="hqOvLineSel"></select>
+        <span class="ov-line-hint">or tap a store’s name in the table below</span>
+        <span class="ov-line-status" id="hqOvLineStatus"></span>
+      </div>
       <div id="hqOvChartBox"></div>
       <div class="ov-note" id="hqOvTableNote"></div>
       <div class="ov-table" id="hqOvTable"></div>
@@ -1074,7 +1085,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 882ad22">882ad22</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -5316,6 +5327,427 @@ function stopDashboard(){
       ovEl.reread.textContent = 'Re-read every store';
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ONE STORE ON THE LINE. ★★★ PURELY ADDITIVE. Not one line above this comment
+  // is edited: ovMirrorView and ovPaint are WRAPPED — the idiom this very
+  // section already uses on showHqView — and ovChart is CALLED with the
+  // signature it always had. The "All stores" path therefore runs exactly the
+  // code it ran before, in the same order, and draws the same line.
+  // ★★ IT READS ONE ACTION, getHqStoreDaily, and only when a store is picked.
+  //    "All stores" never touches the network: it redraws from the daily_totals
+  //    already on the device.
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  var ovLnEl = {};
+  var ovLnWired = false;
+
+  // ★★ THE NAMES ARE getHqOverview's OWN `stores`, CARRIED VERBATIM. Not folded,
+  //    not trimmed, not re-cased, not sorted, and never assembled here — the
+  //    string that goes back out in the request is character for character the
+  //    string that came in. The two writers of HQ DATA fold a store name
+  //    differently (KB-113) and the backend folds it again at its end; a front
+  //    end that "tidied" it first is the one way to miss a shop that is there.
+  var ovLnNames = [];
+
+  // ★ The all-stores line as the painter last understood it — captured from the
+  //   view model, whichever path built it, so coming back to "All stores" after
+  //   a live Re-read redraws the LIVE line and not the mirror's.
+  var ovLnAllByDate = null;
+  var ovLnAllNote = '';
+
+  // ★★ THE RANGE BESIDE THE HEADING, EXACTLY AS ovPaint LEFT IT. It is READ back
+  //    off the element rather than rebuilt from view.rangeStart / view.rangeEnd:
+  //    a second copy of that formatting here is a second implementation of the
+  //    same sentence, and the two would drift on the day either changed.
+  var ovLnAllRange = '';
+
+  // ★ One entry per store asked for during this visit, keyed on the verbatim
+  //   name. Picking the same shop twice redraws from here and sends nothing.
+  //   ★★ A FAILED READ IS NEVER KEPT — only an answer that arrived is cached, so
+  //      a dropped connection can be retried by picking the shop again.
+  var ovLnCache = {};
+
+  var ovLnPick = '';
+
+  // ★ Which read owns the chart. A second pick while the first is still in
+  //   flight makes the first one's reply arrive to a chart it no longer owns.
+  var ovLnSeq = 0;
+
+  function ovLnSay(text) {
+    if (ovLnEl.status) { ovLnEl.status.textContent = text; }
+  }
+
+  /**
+   * Whose days that range covers, said in the range itself.
+   *
+   * ★★★ IT IS NEVER RECOMPUTED, ONLY LABELLED. The range belongs to the
+   *     all-stores read — the tiles and the table beside it still do too — and
+   *     one shop's line was read at a different moment. Putting THIS shop's
+   *     first and last day up there would mean working them out a second time
+   *     and would quietly turn the heading into a claim about the line.
+   * ★★ HIDDEN WAS THE OTHER OPTION AND IT IS WORSE: the figures above and the
+   *    table below are still every store's, so a blank range would leave them
+   *    with no dates at all rather than with dates that name their owner.
+   * ★ "all stores" is this page's own phrase — the same two words the "Today ·
+   *   all stores" tile uses — and the separator is the '·' already in the string.
+   * ★ An empty range stays empty. There is nothing to label.
+   */
+  function ovLnRangeSay(mine) {
+    if (!ovEl.range) { return; }
+    if (ovLnAllRange === '') { ovEl.range.textContent = ''; return; }
+    ovEl.range.textContent = mine ? (ovLnAllRange + ' · all stores') : ovLnAllRange;
+  }
+
+  /** A sentence in the chart's place — ovPaint's own idiom for the same job. */
+  function ovLnInstead(text) {
+    ovEl.chartBox.className = '';
+    ovEl.chartBox.innerHTML = '<p class="ov-empty">' + ovEsc(text) + '</p>';
+  }
+
+  /** getHqOverview's `stores`, de-duplicated by exact string and NOTHING else. */
+  function ovLnNamesFrom(d) {
+    var raw = (Object.prototype.toString.call(d.stores) === '[object Array]') ? d.stores : [];
+    var seen = {};
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      var n = raw[i];
+      if (typeof n !== 'string' || n === '') { continue; }
+      if (Object.prototype.hasOwnProperty.call(seen, n)) { continue; }
+      seen[n] = true;
+      out.push(n);
+    }
+    return out;
+  }
+
+  /**
+   * The menu's names: `stores` first, then any name only the ROWS knew.
+   *
+   * ★★★ A SECOND SOURCE, NOT A REPLACEMENT. The ovMirrorView wrapper still reads
+   *     `stores` and that list is still preferred and still first — it is
+   *     apiListStores_'s whole list, so a shop with no line in the mirror is
+   *     still offered. This exists because the live fan-out (ovRender) never
+   *     goes through ovMirrorView: on that path `stores` was never seen, so the
+   *     menu had nothing to grow from while the table beside it listed every
+   *     shop. The names are now taken from the data the screen is actually
+   *     showing, and both paths reach the menu.
+   * ★★ ONE STRING, ONE ORIGIN, SO THE TWO SOURCES CANNOT SPELL A SHOP TWO WAYS.
+   *    `stores` is apiListStores_'s array. The live rows carry names[i] from
+   *    that same array, put in by ovRender. The mirror's rows carry the name
+   *    apiHqOverviewRow_ was HANDED — that same names[i], NOT HQ DATA's own
+   *    spelling of it. Nothing here folds, trims or re-cases anything to make
+   *    them line up (KB-113); the match is by exact string and the survivor is
+   *    carried on untouched, which is what getHqStoreDaily is then sent.
+   * ★ Dedup is by exact string through hasOwnProperty, so a shop named
+   *   "constructor" is one entry like any other.
+   */
+  function ovLnNamesMerged(view) {
+    var out = [];
+    var seen = {};
+    var i;
+    var n;
+    for (i = 0; i < ovLnNames.length; i++) {
+      n = ovLnNames[i];
+      if (typeof n !== 'string' || n === '') { continue; }
+      if (Object.prototype.hasOwnProperty.call(seen, n)) { continue; }
+      seen[n] = true;
+      out.push(n);
+    }
+    var rows = (Object.prototype.toString.call(view.rows) === '[object Array]') ? view.rows : [];
+    for (i = 0; i < rows.length; i++) {
+      n = rows[i] ? rows[i].name : null;
+      if (typeof n !== 'string' || n === '') { continue; }
+      if (Object.prototype.hasOwnProperty.call(seen, n)) { continue; }
+      seen[n] = true;
+      out.push(n);
+    }
+    return out;
+  }
+
+  /**
+   * ★ The option's value IS the name, so `select.value` hands the request the
+   *   original string back untouched. The order is the reply's order, the same
+   *   one the table below was given.
+   */
+  function ovLnFillMenu() {
+    var sel = ovLnEl.sel;
+    if (!sel) { return; }
+    var keep = ovLnPick;
+    sel.innerHTML = '';
+    var all = document.createElement('option');
+    all.value = '';
+    all.textContent = 'All stores';
+    sel.appendChild(all);
+    for (var i = 0; i < ovLnNames.length; i++) {
+      var o = document.createElement('option');
+      o.value = ovLnNames[i];
+      o.textContent = ovLnNames[i];
+      sel.appendChild(o);
+    }
+    sel.value = keep;
+    if (sel.value !== keep) { ovLnPick = ''; sel.value = ''; }
+  }
+
+  /**
+   * One store's days, added up ON THIS DEVICE. The backend hands over the rows
+   * and adds nothing (KD-090), so this is the only place the arithmetic happens.
+   *
+   * ★★★ null IS NOT NOUGHT. A row whose daily_sales is null contributes NOTHING
+   *     and gives that day no point at all — a day nobody reported must not be
+   *     drawn sitting on the floor beside a day that genuinely took nothing.
+   * ★★ A REAL 0 IS KEPT AND DRAWN AS 0. That is the whole difference the mirror
+   *    goes to the trouble of preserving, and it dies here if this test is
+   *    written as a falsy check.
+   * ★ Two rows for one date are added together rather than one of them winning:
+   *   HQ_DAILY is keyed on (date, store), so a duplicate is a real duplicate and
+   *   silently dropping it would understate that day.
+   */
+  function ovLnByDate(rows) {
+    var byDate = {};
+    var any = false;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i] || {};
+      if (typeof r.date !== 'string' || r.date === '') { continue; }
+      var v = r.daily_sales;
+      if (typeof v !== 'number' || !isFinite(v)) { continue; }
+      byDate[r.date] = (Object.prototype.hasOwnProperty.call(byDate, r.date)
+                          ? byDate[r.date] : 0) + v;
+      any = true;
+    }
+    return { byDate: byDate, any: any };
+  }
+
+  /** Back to every store, off what is already here. ★ NOTHING IS SENT. */
+  function ovLnDrawAll() {
+    ovLnSeq++;
+    if (ovLnAllNote !== '') {
+      ovLnInstead(ovLnAllNote);
+    } else {
+      ovChart(ovLnAllByDate === null ? {} : ovLnAllByDate);
+    }
+    ovLnRangeSay(false);
+    ovLnSay('');
+  }
+
+  /**
+   * ★★★ NO TOTAL, NO AVERAGE, NO PERCENTAGE AND NO COUNT OF DAYS BESIDE THIS
+   *     LINE, EVER. The all-stores line and one shop's line are two reads taken
+   *     at two different moments; a shop that submitted in between makes them
+   *     disagree, and both would still be right. Any figure printed beside this
+   *     line would be an invitation to subtract one from the other, so the only
+   *     words here name the shop and say the read stands on its own.
+   */
+  function ovLnPaintStore(name, kept) {
+    if (kept.flag !== null) {
+      ovLnInstead('HQ DATA has no daily figures to draw for ' + name + ' (' + kept.flag +
+                  '). Pick "All stores" to put the line above back.');
+      ovLnSay(name + ' · nothing in the mirror to draw');
+      return;
+    }
+    if (!kept.any) {
+      ovLnInstead(name + ' has no readable daily figure in the mirror, so there is no line. ' +
+                  'A blank cell is left blank here and is never drawn as nought.');
+      ovLnSay(name + ' · no readable figure');
+      return;
+    }
+    ovChart(kept.byDate);
+    ovLnSay(name + ' · read on its own, at its own moment — not comparable with the ' +
+            'all-stores line');
+  }
+
+  /**
+   * ★★ THE VERDICT IS kdSend's, AND IT IS NOT RE-DIAGNOSED HERE. kdSend already
+   *    asked whoami on the ambiguous path, so there is nothing left to work out
+   *    — and nothing here logs anybody out (KW-040). A read that did not come
+   *    back leaves the page standing and says so beside the chart, exactly as
+   *    the Products pane does with the same three lines.
+   */
+  async function ovLnDrawStore(name) {
+    if (Object.prototype.hasOwnProperty.call(ovLnCache, name)) {
+      ovLnSeq++;
+      ovLnPaintStore(name, ovLnCache[name]);
+      return;
+    }
+
+    var mine = ++ovLnSeq;
+    ovLnSay('Reading ' + name + ' from HQ DATA…');
+    ovLnInstead('Reading ' + name + ' from HQ DATA…');
+
+    var res = await window.kdSend({ action: 'getHqStoreDaily', store: name });
+
+    // ★ Somebody picked again while this was in flight. That pick owns the
+    //   chart now, and this reply is dropped rather than painted over it.
+    if (mine !== ovLnSeq) { return; }
+
+    if (res.verdict !== 'ok' || !res.data || res.data.ok !== true) {
+      ovLnInstead('The request for ' + name + ' did not come back (' + res.verdict + '). This is ' +
+                  'a connection or session problem, NOT a fault in HQ DATA — nothing has been ' +
+                  'said about whether the mirror is readable, and nothing was sent anywhere. ' +
+                  'You are still logged in. Pick the store again to retry, or "All stores" to ' +
+                  'put the line above back.');
+      ovLnSay(name + ' · could not be read (' + res.verdict + ')');
+      return;
+    }
+
+    var d = res.data;
+    var got = ovLnByDate((Object.prototype.toString.call(d.rows) === '[object Array]')
+                           ? d.rows : []);
+    var kept = { byDate: got.byDate, any: got.any,
+                 flag: (typeof d.hq_daily_unavailable === 'string' && d.hq_daily_unavailable !== '')
+                         ? d.hq_daily_unavailable : null };
+    ovLnCache[name] = kept;
+    ovLnPaintStore(name, kept);
+  }
+
+  /**
+   * The row the chart is showing now, marked in the table. ★ ovSorted() is the
+   * table's OWN order function, called again rather than re-derived: the tbody
+   * rows are in exactly the order it returns (ovTable builds them from it), so
+   * row n is order[n] and no name has to be scraped back out of a cell — which
+   * would also pick up the "Not read" flag that shares that cell.
+   */
+  function ovLnMarkRow() {
+    if (!ovEl.table) { return; }
+    var trs = ovEl.table.querySelectorAll('tbody tr');
+    var order = ovSorted();
+    for (var i = 0; i < trs.length; i++) {
+      var name = (i < order.length) ? order[i].name : null;
+      if (ovLnPick !== '' && name === ovLnPick) { trs[i].classList.add('ov-picked'); }
+      else { trs[i].classList.remove('ov-picked'); }
+    }
+  }
+
+  /**
+   * Pick a store from somewhere other than the menu.
+   *
+   * ★★★ THERE IS NO SECOND SWITCH. This sets the menu and then calls ovLnChange
+   *     — the very function the <select>'s own change event calls — so a tap on
+   *     the table and a pick from the menu run the same code in the same order,
+   *     down to the cache, the range label and the status line. The menu is
+   *     therefore never out of step with the chart: it IS what was picked.
+   * ★ A name the menu never grew cannot be asked about, and saying so beats a
+   *   silent no-op. The menu is put back to what it was showing.
+   */
+  function ovLnPickStore(name) {
+    if (typeof name !== 'string' || name === '' || !ovLnEl.sel) { return; }
+    ovLnEl.sel.value = name;
+    if (ovLnEl.sel.value !== name) {
+      ovLnEl.sel.value = ovLnPick;
+      ovLnSay('That store is not in the menu, so there is no line to draw for it.');
+      return;
+    }
+    ovLnChange();
+  }
+
+  /**
+   * ★★ THE STORE CELL AND NOTHING ELSE. cellIndex !== 0 leaves Today and Season
+   *    alone — a tap on a figure must not move the chart, and a person reaching
+   *    for a number is not asking for a different line.
+   * ★★ ONE LISTENER ON THE CONTAINER, not one per row. ovTable replaces its own
+   *    innerHTML on every sort, and per-cell listeners would be re-added on top
+   *    of the old ones every time (the reason ovChart wires its box and not its
+   *    svg).
+   * ★ The header row is a <th>, so a click on it walks past this and reaches
+   *   ovHeadClick exactly as before — sorting is untouched.
+   */
+  function ovLnTableClick(ev) {
+    if (!ovEl.table) { return; }
+    var cell = ev.target;
+    while (cell && cell !== ovEl.table && String(cell.nodeName).toUpperCase() !== 'TD') {
+      cell = cell.parentNode;
+    }
+    if (!cell || String(cell.nodeName).toUpperCase() !== 'TD') { return; }
+    if (cell.cellIndex !== 0) { return; }
+    var row = cell.parentNode;
+    var idx = row ? row.sectionRowIndex : -1;
+    var order = ovSorted();
+    if (typeof idx !== 'number' || idx < 0 || idx >= order.length) { return; }
+    ovLnPickStore(order[idx].name);
+  }
+
+  function ovLnChange() {
+    ovLnPick = ovLnEl.sel.value;
+    ovLnMarkRow();
+    if (ovLnPick === '') { ovLnDrawAll(); return; }
+    // ★ Labelled the moment the pick is made, so it is right for the "Reading…"
+    //   state, the failure state and every drawn state without three copies.
+    ovLnRangeSay(true);
+    ovLnDrawStore(ovLnPick);
+  }
+
+  function ovLnWire() {
+    if (ovLnWired) { return; }
+    ovLnEl.sel = ovGrab('hqOvLineSel');
+    ovLnEl.status = ovGrab('hqOvLineStatus');
+    if (!ovLnEl.sel) { return; }
+    ovLnWired = true;
+    ovLnEl.sel.addEventListener('change', ovLnChange);
+    // ★ On the container, once. It outlives every ovTable repaint.
+    if (ovEl.table) { ovEl.table.addEventListener('click', ovLnTableClick); }
+    ovLnFillMenu();
+  }
+
+  // ★★ WRAPPED, NOT EDITED — twice, and for two different facts. ovMirrorView is
+  //    the only place the reply's own `stores` array can be seen, and ovPaint is
+  //    the one painter both paths end at, so it is where the all-stores line
+  //    becomes known whichever path drew it. Both wrappers call the original
+  //    FIRST and hand its answer straight back.
+  // ★ Every paint resets the menu to "All stores", because a paint has just put
+  //   the all-stores line on the screen and the menu must not claim otherwise.
+  var ovLnInnerView = ovMirrorView;
+  ovMirrorView = function (d) {
+    var view = ovLnInnerView(d);
+    ovLnNames = ovLnNamesFrom(d);
+    return view;
+  };
+
+  var ovLnInnerPaint = ovPaint;
+  ovPaint = function (view) {
+    ovLnInnerPaint(view);
+    ovLnAllByDate = view.byDate;
+    ovLnAllNote = view.chartNote;
+    // ★ Taken AFTER the original ran, so it is that paint's own words, unedited.
+    //   A paint has just put every store on the screen, so it is not labelled.
+    ovLnAllRange = ovEl.range ? ovEl.range.textContent : '';
+    // ★ Whatever `stores` gave us, PLUS the shops this paint is showing. The
+    //   live fan-out never sees `stores`, and its table is still nineteen shops.
+    ovLnNames = ovLnNamesMerged(view);
+    ovLnPick = '';
+    ovLnFillMenu();
+    // ★ AFTER the reset. The inner paint rebuilt the table while the old pick
+    //   was still set, so the mark has to be taken off again here.
+    ovLnMarkRow();
+    ovLnSay('');
+  };
+
+  // ★★ WRAPPED, NOT EDITED, for the third time and for the same reason: ovTable
+  //    replaces its own innerHTML on every sort, so the mark on the picked row
+  //    has to be put back after it — and a sort must not silently drop the one
+  //    row the chart is about.
+  var ovLnInnerTable = ovTable;
+  ovTable = function () {
+    ovLnInnerTable();
+    ovLnMarkRow();
+  };
+
+  var ovLnPrevShow = window.showHqView;
+  window.showHqView = function (store) {
+    if (typeof ovLnPrevShow === 'function') { ovLnPrevShow(store); }
+    ovLnWire();
+  };
+
+  // ★★ A NEW LOGIN MUST NOT SEE THE LAST ONE'S COPY — the Products pane's rule,
+  //    kept here for the same reason. The previous endSession is called last, so
+  //    the way out is unchanged.
+  var ovLnPrevEnd = window.endSession;
+  window.endSession = function () {
+    ovLnSeq++;
+    ovLnNames = []; ovLnCache = {}; ovLnPick = '';
+    ovLnAllByDate = null; ovLnAllNote = ''; ovLnAllRange = '';
+    if (ovLnEl.sel) { ovLnEl.sel.innerHTML = ''; }
+    ovLnSay('');
+    if (typeof ovLnPrevEnd === 'function') { ovLnPrevEnd(); }
+  };
 })();
 </script>
 
@@ -6350,6 +6782,33 @@ function stopDashboard(){
      prevent. Striping and hover both step around it. */
 #hqView .ov-table tbody tr:nth-child(even):not(.ov-unread) td{background:#fafafa}
 #hqView .ov-table tbody tr:hover:not(.ov-unread) td{background:#f1f6f2}
+
+/* ─── One store on the line. ★ ADDITIVE: the row that sits above the chart and
+       picks whose line is drawn. The greys, the radius and the border are the
+       ones already on .ov-reread and .ov-tile; the select inherits the page
+       font like every other control on this screen. */
+#hqView .ov-line-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:14px 0 0}
+#hqView .ov-line-row label{font-size:12px;font-weight:600;letter-spacing:.03em;color:#555}
+#hqView .ov-line-row select{font-family:inherit;font-size:13px;padding:7px 10px;
+  border:1px solid #cfcfcf;border-radius:8px;background:#fff;color:#111;max-width:100%}
+#hqView .ov-line-status{font-size:12px;color:#666}
+#hqView .ov-line-status:empty{display:none}
+#hqView .ov-line-hint{font-size:12px;color:#666}
+/* ★ THE STORE CELL ONLY — td:first-child. Today and Season are left exactly as
+     they were: nothing about them says "tap me" and nothing here makes them.
+   ★ :not(.ov-unread) on the colour and the highlight, for the reason the note
+     above :6460 already gives — the unread row is red on purpose and a green of
+     mine that out-specified it would undo the one distinction that row exists
+     for. The cursor is the only thing an unread row gets, because tapping it
+     works there too. */
+#hqView .ov-table tbody td:first-child{cursor:pointer}
+#hqView .ov-table tbody tr:not(.ov-unread) td:first-child{color:#1e7e34;font-weight:600;
+  text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+#hqView .ov-table tbody tr:not(.ov-unread):hover td:first-child{background:#e8f5ec}
+/* ★ The row the chart is currently showing. Same green family as the live
+     source line, and it steps around the unread row like everything else. */
+#hqView .ov-table tbody tr.ov-picked:not(.ov-unread) td{background:#e8f5ec}
+#hqView .ov-table tbody tr.ov-picked:not(.ov-unread) td:first-child{border-left:4px solid #1e7e34}
 
 /* ─── Portrait phone. The tables already scroll on their own axis
        (.ov-table / .hq-week are overflow-x:auto), so nothing has to be
