@@ -1085,7 +1085,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build ed2940b">ed2940b</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -6301,6 +6301,470 @@ function stopDashboard(){
 })();
 </script>
 
+<style>
+/* ════════════════════════════════════════════════════════════════════════
+   THE PHOTOS PANE. A FIFTH SIBLING of #hqView, #supplyView and
+   #productsView, never inside any of them, so not one line of those
+   screens changes shape.
+   ★ Every rule is scoped to #photosView and every class is hqp-*, so
+     nothing in here can reach the other panes.
+   ★★ The pr-* classes could not simply be reused: every one of them is
+      written as `#productsView .pr-…`, so it does not apply inside a
+      different view. The VALUES below are the same ones — the #d8d8d8 card
+      border, the 10px radius, the 13px type — so the two pages match
+      without either of them depending on the other's selectors.
+   ★ No font, image or script is loaded from anywhere. The photos arrive as
+     base64 in the reply and are drawn from a data: URL.
+   ════════════════════════════════════════════════════════════════════════ */
+#photosView .hqp-wrap{max-width:920px;margin:0 auto;padding:12px}
+#photosView .hqp-card{border:1px solid #d8d8d8;border-radius:10px;padding:14px;margin:12px 0;
+  background:#fff}
+#photosView .hqp-card h2{margin:0 0 6px;font-size:17px}
+#photosView .hqp-hint{margin:0 0 10px;color:#666;font-size:13px;line-height:1.5}
+#photosView .hqp-crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;
+  margin:10px 0 4px;font-size:13px}
+#photosView .hqp-crumbs button{font:inherit;background:none;border:none;padding:2px 4px;
+  color:#1a5fa8;text-decoration:underline;cursor:pointer}
+#photosView .hqp-crumbs .hqp-here{padding:2px 4px;color:#111;font-weight:600}
+#photosView .hqp-crumbs .hqp-sep{color:#999}
+#photosView .hqp-status{margin-top:12px;font-size:13px;color:#555}
+#photosView .hqp-status:empty{display:none}
+#photosView .hqp-broken{margin-top:12px;padding:11px;border:2px solid #c0392b;border-radius:8px;
+  background:#fdf3f2;color:#8c2019;font-size:13px;line-height:1.5}
+#photosView .hqp-broken:empty{display:none}
+#photosView .hqp-note{margin-top:10px;font-size:12px;color:#8a6d1f;line-height:1.5}
+#photosView .hqp-note:empty{display:none}
+#photosView .hqp-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  width:100%;font:inherit;font-size:14px;text-align:left;background:#fff;cursor:pointer;
+  border:1px solid #e0e0e0;border-radius:8px;padding:11px 12px;margin-top:8px}
+#photosView .hqp-row:hover{background:#f6f6f6}
+#photosView .hqp-count{color:#555;font-size:12px;white-space:nowrap}
+/* ★★ 0 IS NOT THE SAME PIXEL AS A NUMBER. A task folder with nothing in it is
+      a fact worth seeing before the tap, not after. */
+#photosView .hqp-count.hqp-zero{color:#8c2019;font-weight:600}
+#photosView .hqp-empty{margin-top:12px;padding:11px;border:1px dashed #ccc;border-radius:8px;
+  color:#555;font-size:13px;line-height:1.5}
+#photosView .hqp-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+#photosView .hqp-shot{border:1px solid #e0e0e0;border-radius:8px;padding:6px;background:#fff;
+  width:220px}
+#photosView .hqp-shot img{display:block;width:100%;height:auto;border-radius:4px}
+#photosView .hqp-shot figcaption{margin-top:5px;font-size:11px;color:#666;word-break:break-all}
+@media(max-width:560px){
+  #photosView .hqp-wrap{padding:12px 8px 24px}
+  #photosView .hqp-shot{width:100%}
+}
+</style>
+
+<div id="photosView" class="hidden">
+  <div class="hqp-wrap">
+    <section class="hqp-card">
+      <h2>Photos</h2>
+      <!-- ★ Same reason the DO desk and Products carry one: when this tab is
+           open #hqView is hidden, and its topbar's Log out goes with it. -->
+      <button id="hqpLogoutBtn" class="topbar-logout">Log out</button>
+      <p class="hqp-hint">The task photos as they sit in Drive: store, then day, then task.
+        One folder is opened per tap and nothing below it is read until you tap it, so no
+        screen here ever waits on a level nobody asked for. Nothing on this page writes
+        anything, anywhere, and no Drive sharing setting is touched — the pictures come back
+        through the same door every other read uses.</p>
+      <nav class="hqp-crumbs" id="hqpCrumbs"></nav>
+      <div class="hqp-status" id="hqpStatus">Not loaded yet.</div>
+      <div class="hqp-broken" id="hqpBroken"></div>
+      <div class="hqp-note" id="hqpNote"></div>
+      <div id="hqpBody"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /**
+   * THE PHOTOS PANE. Four backend actions, ONE of them per tap, each opening
+   * exactly one level of TaskPhotos / <store> / <date> / <task> / <file>.
+   *
+   * ★★★ ONE LEVEL, ONE CALL, NEVER A PREFETCH. Listing one store's day folders
+   *     was measured at about 400 ms; nineteen stores is 7.5 seconds, and that
+   *     is a bill this page refuses to run up on a person who wanted one shop.
+   *     There is no code path here that reads a level nobody has tapped.
+   * ★★★ THE READ IS LAZY AND THE STORE LIST IS ASKED FOR ONCE. Nothing is sent
+   *     at login; the first time this tab is opened it asks for the store list
+   *     and keeps it for the session, the same bargain the Products pane makes
+   *     (KD-033). Switching tab and coming back sends nothing.
+   * ★★ THE ROLE GATE IS NAV_TABS' AND NOBODY ELSE'S — roles:['hq'], matched
+   *    against window.kdRole, the `role` the SERVER decided. No store name is
+   *    read here and no role is computed here. The backend gates all four
+   *    actions again on its own side; this pane is not the security.
+   * ★★★ 'NO_FOLDER' AND 'NO_FILE' ARE NEVER THE SAME SENTENCE. The first says
+   *     the folder is not there at all; the second says the folder is there and
+   *     that picture is not. An empty items array with ok:true is a THIRD
+   *     thing — the folder is there and holds nothing yet. All three print
+   *     differently, because a person deciding whether a shop skipped a task
+   *     needs to know which one it was.
+   * ★★ NOTHING IS ADDED UP ACROSS LEVELS. file_count belongs to the one folder
+   *    it came from. There is no "this store has N photos" anywhere, because no
+   *    such number was read and inventing one here would be a second opinion.
+   */
+
+  var HQP_NO_FOLDER = 'NO_FOLDER';
+  var HQP_NO_FILE   = 'NO_FILE';
+
+  var hqpEl = {};
+  var hqpLoaded = false;      // the store list arrived and is being kept
+  var hqpBusy = false;        // a request is in the air
+  var hqpBroken = '';         // the call itself failed — not a fact about Drive
+  var hqpLevel = 'stores';    // 'stores' | 'dates' | 'tasks' | 'photos'
+  var hqpStore = '';
+  var hqpDate = '';
+  var hqpTask = '';
+  var hqpStores = null;       // the store list, kept for the session
+  var hqpStoresCapped = false;
+  var hqpStoresReason = null;
+  var hqpItems = null;        // whatever the CURRENT level listed
+  var hqpItemsCapped = false;
+  var hqpItemsReason = null;
+  var hqpShots = [];          // the pictures that have arrived, in index order
+  var hqpTotal = 0;           // file_count for the open task folder — its own, not a sum
+  var hqpShotReason = null;
+  var hqpShotCapped = false;
+
+  /**
+   * ★★ THE GENERATION GUARD. Tapping a breadcrumb while a request is still in
+   *    the air must not let the old reply paint over the new level. Every
+   *    navigation bumps this, and a reply whose generation is stale is dropped
+   *    on the floor — it is not an error and it is not shown.
+   */
+  var hqpSeq = 0;
+
+  function hqpGrab(id) { return document.getElementById(id); }
+
+  function hqpEsc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /** The one sentence for a call that did not come back. */
+  function hqpBrokenText(what, verdict) {
+    return 'The request for ' + what + ' did not come back (' + verdict + '). This is a ' +
+           'connection or session problem, NOT a fact about Drive — nothing has been said ' +
+           'about whether that folder exists. Nothing was sent anywhere. Tap the level again ' +
+           'to retry.';
+  }
+
+  function hqpCrumbs() {
+    var out = ['<button type="button" data-lvl="stores">Stores</button>'];
+    if (hqpStore !== '') {
+      out.push('<span class="hqp-sep">&rsaquo;</span>');
+      out.push(hqpLevel === 'dates'
+                 ? '<span class="hqp-here">' + hqpEsc(hqpStore) + '</span>'
+                 : '<button type="button" data-lvl="dates">' + hqpEsc(hqpStore) + '</button>');
+    }
+    if (hqpDate !== '') {
+      out.push('<span class="hqp-sep">&rsaquo;</span>');
+      out.push(hqpLevel === 'tasks'
+                 ? '<span class="hqp-here">' + hqpEsc(hqpDate) + '</span>'
+                 : '<button type="button" data-lvl="tasks">' + hqpEsc(hqpDate) + '</button>');
+    }
+    if (hqpTask !== '') {
+      out.push('<span class="hqp-sep">&rsaquo;</span>');
+      out.push('<span class="hqp-here">' + hqpEsc(hqpTask) + '</span>');
+    }
+    hqpEl.crumbs.innerHTML = out.join(' ');
+  }
+
+  /** ★ The three absences, told apart. `what` names the level in words. */
+  function hqpEmptyHtml(reason, what) {
+    if (reason === HQP_NO_FOLDER) {
+      return '<div class="hqp-empty">That folder is not in Drive at all. Nothing has been ' +
+             'created to stand in for it — this page only ever reads.</div>';
+    }
+    return '<div class="hqp-empty">That folder is there, and it is empty: no ' +
+           hqpEsc(what) + ' in it yet.</div>';
+  }
+
+  function hqpCappedHtml(capped) {
+    return capped ? '<div class="hqp-note">Showing the first 200 only — there are more in ' +
+                    'this folder than that.</div>' : '';
+  }
+
+  function hqpPaint() {
+    hqpCrumbs();
+    hqpEl.broken.textContent = hqpBroken;
+    hqpEl.note.innerHTML = '';
+
+    if (hqpLevel === 'photos') { hqpPaintShots(); return; }
+
+    var list = (hqpLevel === 'stores') ? hqpStores : hqpItems;
+    var capped = (hqpLevel === 'stores') ? hqpStoresCapped : hqpItemsCapped;
+    var reason = (hqpLevel === 'stores') ? hqpStoresReason : hqpItemsReason;
+
+    if (list === null) {
+      hqpEl.status.textContent = hqpBusy ? 'Reading…' : 'Not loaded yet.';
+      hqpEl.body.innerHTML = '';
+      return;
+    }
+
+    var noun = (hqpLevel === 'stores') ? 'store' : (hqpLevel === 'dates' ? 'day' : 'task folder');
+    hqpEl.status.textContent = hqpBusy
+      ? 'Reading…'
+      : (list.length + ' ' + noun + (list.length === 1 ? '' : 's') + ' in this folder.');
+
+    if (list.length === 0) {
+      hqpEl.body.innerHTML = hqpEmptyHtml(reason, noun + 's');
+      return;
+    }
+
+    var rows = [];
+    for (var i = 0; i < list.length; i++) {
+      if (hqpLevel === 'tasks') {
+        var name = String(list[i] && list[i].name !== undefined ? list[i].name : '');
+        var n = (list[i] && typeof list[i].file_count === 'number') ? list[i].file_count : null;
+        rows.push('<button type="button" class="hqp-row" data-hqp="task" data-val="' +
+                  hqpEsc(name) + '" data-count="' + hqpEsc(n === null ? 0 : n) + '">' +
+                  '<span>' + hqpEsc(name) + '</span>' +
+                  '<span class="hqp-count' + (n === 0 ? ' hqp-zero' : '') + '">' +
+                  (n === null ? 'count unreadable'
+                              : (n + ' photo' + (n === 1 ? '' : 's') + ' in this folder')) +
+                  '</span></button>');
+      } else {
+        rows.push('<button type="button" class="hqp-row" data-hqp="' +
+                  (hqpLevel === 'stores' ? 'store' : 'date') + '" data-val="' +
+                  hqpEsc(list[i]) + '"><span>' + hqpEsc(list[i]) + '</span>' +
+                  '<span class="hqp-count">Open</span></button>');
+      }
+    }
+    hqpEl.body.innerHTML = rows.join('');
+    hqpEl.note.innerHTML = hqpCappedHtml(capped);
+  }
+
+  /**
+   * ★★ ONE PICTURE IS DRAWN THE MOMENT IT ARRIVES. The whole grid is repainted
+   *    from hqpShots after every single reply, so the second photo does not
+   *    wait on the eighth. "Loaded N of M" is the folder's own file_count, not
+   *    a figure this page worked out.
+   */
+  function hqpPaintShots() {
+    if (hqpShotReason === HQP_NO_FOLDER) {
+      hqpEl.status.textContent = '';
+      hqpEl.body.innerHTML = hqpEmptyHtml(HQP_NO_FOLDER, 'photos');
+      return;
+    }
+    if (hqpTotal === 0 && hqpShots.length === 0) {
+      hqpEl.status.textContent = '';
+      hqpEl.body.innerHTML = hqpEmptyHtml(null, 'photos');
+      return;
+    }
+
+    hqpEl.status.textContent = 'Loaded ' + hqpShots.length + ' of ' + hqpTotal + ' photo' +
+                               (hqpTotal === 1 ? '' : 's') + ' in this folder' +
+                               (hqpBusy ? ' — still reading…' : '.');
+
+    var cells = [];
+    for (var i = 0; i < hqpShots.length; i++) {
+      cells.push('<figure class="hqp-shot"><img alt="' + hqpEsc(hqpShots[i].name) +
+                 '" src="data:' + hqpEsc(hqpShots[i].mime) + ';base64,' +
+                 hqpEsc(hqpShots[i].bytes) + '"><figcaption>' + hqpEsc(hqpShots[i].name) +
+                 '</figcaption></figure>');
+    }
+    hqpEl.body.innerHTML = '<div class="hqp-grid">' + cells.join('') + '</div>';
+
+    var notes = hqpCappedHtml(hqpShotCapped);
+    if (hqpShotReason === HQP_NO_FILE) {
+      notes += '<div class="hqp-note">The folder is there and it has no further picture — ' +
+               'it holds ' + hqpShots.length + ', which is fewer than the ' + hqpTotal +
+               ' it listed a moment ago. Nothing failed; somebody removed one in between.' +
+               '</div>';
+    }
+    hqpEl.note.innerHTML = notes;
+  }
+
+  // ─── One level, one call. Each of these sends exactly one action. ─────────
+
+  async function hqpLoadStores() {
+    var seq = ++hqpSeq;
+    hqpBusy = true; hqpBroken = '';
+    hqpPaint();
+
+    var res = await window.kdSend({ action: 'listPhotoStores' });
+    if (seq !== hqpSeq) { return; }
+    hqpBusy = false;
+
+    if (res.verdict !== 'ok' || !res.data || res.data.ok !== true) {
+      hqpBroken = hqpBrokenText('the store list', res.verdict);
+      hqpPaint();
+      return;
+    }
+    hqpStores = (Object.prototype.toString.call(res.data.items) === '[object Array]')
+                  ? res.data.items : [];
+    hqpStoresCapped = (res.data.capped === true);
+    hqpStoresReason = (typeof res.data.reason === 'string') ? res.data.reason : null;
+    hqpLoaded = true;
+    hqpPaint();
+  }
+
+  async function hqpGoDates(store) {
+    var seq = ++hqpSeq;
+    hqpLevel = 'dates'; hqpStore = store; hqpDate = ''; hqpTask = '';
+    hqpItems = null; hqpItemsCapped = false; hqpItemsReason = null;
+    hqpShots = []; hqpTotal = 0; hqpShotReason = null; hqpShotCapped = false;
+    hqpBusy = true; hqpBroken = '';
+    hqpPaint();
+
+    var res = await window.kdSend({ action: 'listPhotoDates', store: store });
+    if (seq !== hqpSeq) { return; }
+    hqpBusy = false;
+
+    if (res.verdict !== 'ok' || !res.data || res.data.ok !== true) {
+      hqpBroken = hqpBrokenText('the days of ' + store, res.verdict);
+      hqpPaint();
+      return;
+    }
+    hqpItems = (Object.prototype.toString.call(res.data.items) === '[object Array]')
+                 ? res.data.items : [];
+    hqpItemsCapped = (res.data.capped === true);
+    hqpItemsReason = (typeof res.data.reason === 'string') ? res.data.reason : null;
+    hqpPaint();
+  }
+
+  async function hqpGoTasks(date) {
+    var seq = ++hqpSeq;
+    hqpLevel = 'tasks'; hqpDate = date; hqpTask = '';
+    hqpItems = null; hqpItemsCapped = false; hqpItemsReason = null;
+    hqpShots = []; hqpTotal = 0; hqpShotReason = null; hqpShotCapped = false;
+    hqpBusy = true; hqpBroken = '';
+    hqpPaint();
+
+    var res = await window.kdSend({ action: 'listPhotoTasks', store: hqpStore, date: date });
+    if (seq !== hqpSeq) { return; }
+    hqpBusy = false;
+
+    if (res.verdict !== 'ok' || !res.data || res.data.ok !== true) {
+      hqpBroken = hqpBrokenText('the task folders of ' + date, res.verdict);
+      hqpPaint();
+      return;
+    }
+    hqpItems = (Object.prototype.toString.call(res.data.items) === '[object Array]')
+                 ? res.data.items : [];
+    hqpItemsCapped = (res.data.capped === true);
+    hqpItemsReason = (typeof res.data.reason === 'string') ? res.data.reason : null;
+    hqpPaint();
+  }
+
+  /**
+   * ★★★ ONE PICTURE PER REQUEST, IN ORDER, AND IT STOPS ITSELF. The loop ends
+   *     on the folder's own file_count OR on NO_FILE, whichever comes first —
+   *     it never keeps asking until something errors.
+   */
+  async function hqpGoShots(task, count) {
+    var seq = ++hqpSeq;
+    hqpLevel = 'photos'; hqpTask = task;
+    hqpShots = []; hqpShotReason = null; hqpShotCapped = false;
+    hqpTotal = (typeof count === 'number' && isFinite(count) && count > 0) ? count : 0;
+    hqpBroken = '';
+    hqpBusy = (hqpTotal > 0);
+    hqpPaint();
+    if (hqpTotal === 0) { return; }
+
+    for (var i = 0; i < hqpTotal; i++) {
+      var res = await window.kdSend({ action: 'getPhotoImage', store: hqpStore,
+                                      date: hqpDate, task: task, index: i });
+      if (seq !== hqpSeq) { return; }
+
+      if (res.verdict !== 'ok' || !res.data || res.data.ok !== true) {
+        hqpBusy = false;
+        hqpBroken = hqpBrokenText('photo ' + (i + 1) + ' of ' + task, res.verdict);
+        hqpPaint();
+        return;
+      }
+
+      var d = res.data;
+      if (d.reason === HQP_NO_FILE || d.reason === HQP_NO_FOLDER) {
+        hqpShotReason = d.reason;
+        break;
+      }
+      if (typeof d.bytes_base64 !== 'string' || d.bytes_base64 === '') { break; }
+
+      hqpShots.push({ name: String(d.name === undefined ? '' : d.name),
+                      mime: (typeof d.mime === 'string' && d.mime !== '') ? d.mime : 'image/jpeg',
+                      bytes: d.bytes_base64 });
+      if (d.capped === true) { hqpShotCapped = true; }
+      hqpPaint();
+    }
+
+    hqpBusy = false;
+    hqpPaint();
+  }
+
+  /** ★ Going back up. Re-reading one level costs one call; nothing else moves. */
+  function hqpUpTo(level) {
+    if (level === 'stores') {
+      hqpSeq++;
+      hqpLevel = 'stores'; hqpStore = ''; hqpDate = ''; hqpTask = '';
+      hqpItems = null; hqpShots = []; hqpTotal = 0; hqpBusy = false; hqpBroken = '';
+      hqpShotReason = null; hqpShotCapped = false;
+      hqpPaint();
+      return;
+    }
+    if (level === 'dates' && hqpStore !== '') { hqpGoDates(hqpStore); return; }
+    if (level === 'tasks' && hqpDate !== '') { hqpGoTasks(hqpDate); }
+  }
+
+  function hqpActivate() {
+    if (hqpBusy || hqpLoaded) { return; }
+    hqpLoadStores();
+  }
+
+  // ─── Wiring. Every element above this script is already parsed.
+  hqpEl.crumbs = hqpGrab('hqpCrumbs');
+  hqpEl.status = hqpGrab('hqpStatus');
+  hqpEl.broken = hqpGrab('hqpBroken');
+  hqpEl.note   = hqpGrab('hqpNote');
+  hqpEl.body   = hqpGrab('hqpBody');
+
+  // ★ Delegated, so a repaint never has to re-attach a listener per row.
+  hqpEl.body.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('button[data-hqp]') : null;
+    if (!btn) { return; }
+    var kind = btn.getAttribute('data-hqp');
+    var val = btn.getAttribute('data-val');
+    if (kind === 'store') { hqpGoDates(val); }
+    else if (kind === 'date') { hqpGoTasks(val); }
+    else if (kind === 'task') { hqpGoShots(val, Number(btn.getAttribute('data-count'))); }
+  });
+
+  hqpEl.crumbs.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('button[data-lvl]') : null;
+    if (!btn) { return; }
+    hqpUpTo(btn.getAttribute('data-lvl'));
+  });
+
+  hqpGrab('hqpLogoutBtn').addEventListener('click', function () { window.endSession(); });
+
+  // ★ Wrapped, not edited — the same idiom the nav bar and Products use.
+  var hqpPrevShown = window.kdPaneShown;
+  window.kdPaneShown = function (key) {
+    if (typeof hqpPrevShown === 'function') { hqpPrevShown(key); }
+    if (key === 'photos') { hqpActivate(); }
+  };
+
+  // ★★ A NEW LOGIN MUST NOT SEE THE LAST ONE'S FOLDERS OR PICTURES.
+  var hqpPrevEnd = window.endSession;
+  window.endSession = function () {
+    hqpSeq++;
+    hqpLoaded = false; hqpBusy = false; hqpBroken = ''; hqpLevel = 'stores';
+    hqpStore = ''; hqpDate = ''; hqpTask = '';
+    hqpStores = null; hqpStoresCapped = false; hqpStoresReason = null;
+    hqpItems = null; hqpItemsCapped = false; hqpItemsReason = null;
+    hqpShots = []; hqpTotal = 0; hqpShotReason = null; hqpShotCapped = false;
+    hqpEl.status.textContent = 'Not loaded yet.';
+    hqpEl.broken.textContent = ''; hqpEl.note.innerHTML = '';
+    hqpEl.crumbs.innerHTML = ''; hqpEl.body.innerHTML = '';
+    if (typeof hqpPrevEnd === 'function') { hqpPrevEnd(); }
+  };
+})();
+</script>
+
 <script>
 (function () {
   'use strict';
@@ -6842,6 +7306,7 @@ function stopDashboard(){
   var NAV_TABS = [
     { key: 'overview', label: 'Overview',         viewId: 'hqView',       roles: ['hq'] },
     { key: 'products', label: 'Products',         viewId: 'productsView', roles: ['hq'] },
+    { key: 'photos',   label: 'Photos',           viewId: 'photosView',   roles: ['hq'] },
     { key: 'supply',   label: 'Supply · DO desk', viewId: 'supplyView',   roles: ['hq', 'factory'] }
   ];
 
