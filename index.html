@@ -1085,7 +1085,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build dd73cd1">dd73cd1</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -5809,6 +5809,24 @@ function stopDashboard(){
    a hand's width from the product they describe. min-width still stops the
    product name shredding when the table is narrower than the text. */
 #supplyView .sup-table td.wrap{white-space:normal;text-align:left;min-width:160px;width:100%}
+/* ── THE SINGLE-STORE READ AND THE "new today" MARKS. Additive: every
+   selector below is a new sup-one-* / sup-new / sup-dot name, so not one
+   rule above this comment changes what it matches.
+   ★ The green is the same one the progress log already uses for 'ok', and
+     the amber panel is the same pair the DO desk's own warnings use. ── */
+#supplyView .sup-one-bar{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px;
+  margin-left:10px}
+#supplyView .sup-one-say{margin-top:8px;font-size:13px;color:#555;line-height:1.5}
+#supplyView .sup-one-say:empty{display:none}
+#supplyView .sup-one-say.ok{color:#1d6b3a}
+#supplyView .sup-one-say.bad{color:#8c2019;font-weight:600}
+#supplyView .sup-one-scope-on{margin-top:10px;padding:9px 11px;border-left:4px solid #b8860b;
+  background:#fdf7e6;font-size:13px;color:#6b5310;line-height:1.5}
+#supplyView .sup-one-new{margin-top:8px;font-size:13px;color:#333}
+#supplyView .sup-one-sub{color:#666;font-size:12px}
+#supplyView .sup-table tr.sup-new td{background:#eaf6ec}
+#supplyView .sup-dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+  background:#1d6b3a;margin-right:6px;vertical-align:middle}
 </style>
 
 <div id="supplyView" class="hidden">
@@ -5827,6 +5845,14 @@ function stopDashboard(){
         it has asked for in the last 14 days. Nothing here writes anything, anywhere —
         this screen only looks.</p>
       <button id="supLoadBtn">Load all stores</button>
+      <!-- ★★ BESIDE THE OLD BUTTON, NEVER IN PLACE OF IT. "Load all stores"
+           and supLoadAll behave exactly as they did; this second control sends
+           ONE getStoreSupply for ONE shop and never runs a loop. -->
+      <span class="sup-one-bar">
+        <select id="supOneSel"><option value="">Store list not loaded yet</option></select>
+        <button id="supOneBtn">Load this store</button>
+      </span>
+      <div id="supOneSay" class="sup-one-say"></div>
       <div id="supProgress" class="sup-progress"></div>
       <div id="supFailures"></div>
     </section>
@@ -5836,6 +5862,10 @@ function stopDashboard(){
       <p class="sup-hint">Everything below is already on this device. Switching store or
         tab sends nothing — reload above when you want fresher figures.</p>
       <select id="supStoreSel"></select>
+      <!-- ★ Filled by supOneAfterPaint: which shop this is, how many of ITS OWN
+           rows are stamped with the server's today, and — only after a
+           single-store read — that this screen is about one shop and no other. -->
+      <div id="supOneScopeBar"></div>
       <div class="sup-tabs">
         <button id="supStockBtn" class="on">Stock</button>
         <button id="supPackBtn" class="ghost">Packaging</button>
@@ -6981,6 +7011,7 @@ function stopDashboard(){
     var reply = Object.prototype.hasOwnProperty.call(supData, name) ? supData[name] : null;
     if (reply === null) { el.panel.innerHTML = '<div class="sup-none">Nothing loaded for this store.</div>'; return; }
     el.panel.innerHTML = (supTab === 'stock') ? supStockHtml(reply) : supPackHtml(reply);
+    supOneAfterPaint();
   }
 
   /**
@@ -7154,6 +7185,233 @@ function stopDashboard(){
     }
     supPaintPanel();
   }
+
+  // -------------------------------------------------------------------------
+  // ONE STORE, AND WHAT CAME IN TODAY
+  //
+  // ★★★ EVERYTHING BELOW IS AN ADDITION. supLoadAll, supSend, supFillStoreList,
+  //     supPackHtml, supPackTable and supStockHtml are not edited, not wrapped
+  //     and not re-registered. The only existing function that changed at all
+  //     is supPaintPanel, which gained ONE line calling supOneAfterPaint at its
+  //     end — the single funnel every repaint already goes through.
+  // ★★★ NO "HANDLED" STATE EXISTS HERE AND NONE WILL. Nothing remembers what
+  //     anybody looked at or clicked; every repaint recomputes from the reply
+  //     in hand. A tick would record that the DO desk did something, not that
+  //     the goods arrived (KB-018 / KB-082, both refused).
+  // ★★ NO localStorage, NO sessionStorage, NO timer, NO external resource.
+  // -------------------------------------------------------------------------
+
+  var supOneScope = null;   // the shop a single-store read is showing; null means "all"
+  var supOneBusy = false;
+
+  function supOneSay(text, cls) {
+    var box = grab('supOneSay');
+    if (!box) { return; }
+    box.className = 'sup-one-say' + (cls ? ' ' + cls : '');
+    box.textContent = text;
+  }
+
+  /**
+   * ★★ THE NAMES COME FROM supStores AND NOWHERE ELSE. No store name is typed
+   *    into this file, no count of shops is assumed, and listStores is not
+   *    called again when the list is already in hand.
+   */
+  function supOneFillPicker() {
+    var sel = grab('supOneSel');
+    if (!sel) { return; }
+    var html = '<option value="">&mdash; pick a store &mdash;</option>';
+    for (var i = 0; i < supStores.length; i++) {
+      html += '<option value="' + supEsc(supStores[i]) + '">' + supEsc(supStores[i]) + '</option>';
+    }
+    sel.innerHTML = html;
+  }
+
+  /**
+   * ★★★ THE SERVER'S TODAY, NOT THIS TERMINAL'S. server_date is the string
+   *     getStoreSupply already puts on its own reply — the same one the stock
+   *     panel prints as "against server date" — computed from the script's
+   *     clock in the literal timezone. No Date is constructed here, nothing is
+   *     subtracted from anything, and the browser's clock and timezone never
+   *     enter the comparison (KD-073).
+   * ★ Each shop is judged against ITS OWN reply's date, so two replies taken
+   *   either side of midnight cannot make one shop's rows answer to the other's
+   *   day.
+   */
+  function supOneToday(reply) {
+    return (reply && typeof reply.server_date === 'string') ? reply.server_date : '';
+  }
+
+  /**
+   * How many of THIS shop's request rows are stamped with THIS shop's today.
+   * ★★ ONE STORE'S OWN NUMBER. It is never added to another store's, and there
+   *    is no company figure anywhere on this screen.
+   * ★ The first ten characters of Date_Time, compared as text. 'yyyy-MM-dd' is
+   *   what the server wrote (src/Api.js, submitPackaging's stamp) and what
+   *   server_date is, so the comparison is string against string.
+   */
+  function supOneCountToday(reply) {
+    var day = supOneToday(reply);
+    var pack = reply ? reply.packaging : null;
+    if (day === '' || !pack || !pack.rows) { return 0; }
+
+    var n = 0;
+    for (var i = 0; i < pack.rows.length; i++) {
+      if (String(pack.rows[i].date_time).substring(0, 10) === day) { n++; }
+    }
+    return n;
+  }
+
+  /**
+   * The green dot and the tint, put on after the table is drawn.
+   * ★★ DONE HERE RATHER THAN INSIDE supPackTable ON PURPOSE: that function and
+   *    supPackHtml are the packing screen itself and stay byte for byte as they
+   *    were. Column one is Date_Time by construction, so its text is what is
+   *    read; anything that is not a 'yyyy-MM-dd' simply never matches.
+   * ★ Packaging only. The stock panel's table is a different fact and is left
+   *   alone.
+   */
+  function supOneMarkRows(reply) {
+    if (!el.panel || supTab !== 'packaging') { return; }
+    var day = supOneToday(reply);
+    if (day === '') { return; }
+
+    var trs = el.panel.querySelectorAll('table tr');
+    for (var i = 0; i < trs.length; i++) {
+      var cell = trs[i].cells ? trs[i].cells[0] : null;
+      if (!cell || cell.tagName !== 'TD') { continue; }
+      if (String(cell.textContent).substring(0, 10) !== day) { continue; }
+      trs[i].classList.add('sup-new');
+      cell.insertAdjacentHTML('afterbegin', '<span class="sup-dot" aria-hidden="true"></span>');
+    }
+  }
+
+  /** Called at the end of every repaint. Recomputes everything; remembers nothing. */
+  function supOneAfterPaint() {
+    // ★ The picker fills itself the moment names exist, however they arrived —
+    //   including from a "Load all stores" run this code did not start.
+    var picker = grab('supOneSel');
+    if (picker && supStores.length > 0 && picker.options.length <= 1) { supOneFillPicker(); }
+
+    var bar = grab('supOneScopeBar');
+    var name = el.sel ? el.sel.value : '';
+    var reply = (name !== '' && Object.prototype.hasOwnProperty.call(supData, name))
+                  ? supData[name] : null;
+
+    if (bar) {
+      if (reply === null) {
+        bar.innerHTML = '';
+      } else {
+        var scope = (supOneScope === null)
+          ? ''
+          : '<div class="sup-one-scope-on">ONE STORE ONLY. This is a single-store read of <b>' +
+            supEsc(supOneScope) + '</b>. Nothing on this screen says anything about any other ' +
+            'shop, and no figure here is counted across shops. Press "Load all stores" for ' +
+            'the whole company.</div>';
+        bar.innerHTML = scope +
+          '<div class="sup-one-new"><b>' + supEsc(name) + '</b> &mdash; ' +
+          supEsc(supOneCountToday(reply)) + ' new today <span class="sup-one-sub">(rows ' +
+          'stamped ' + supEsc(supOneToday(reply)) + ', this shop\'s own rows only, against ' +
+          'the server date on this shop\'s own reply)</span></div>';
+      }
+    }
+    supOneMarkRows(reply);
+  }
+
+  /**
+   * ★★★ ONE REQUEST, ONE SHOP, NO LOOP. There is no second getStoreSupply on
+   *     this path and nothing is read "while we are here". The backend refuses
+   *     `stores` and `all_stores` outright; this is the client side of that.
+   * ★★ THE PREVIOUS RUN'S CROSS-STORE LEFTOVERS GO BEFORE THE READ, not after:
+   *    a failure list reading "3 stores did not load" sitting above a
+   *    single-store result is a sentence about a different read at a different
+   *    time, and on this screen that is how stock goes to the wrong shop.
+   */
+  async function supOneLoad() {
+    if (supBusy || supOneBusy) { return; }
+    var btn = grab('supOneBtn');
+    supOneBusy = true;
+    if (btn) { btn.disabled = true; }
+
+    // --- step one, and ONLY when the names are not already here -------------
+    //
+    // ★★ NAMES ONLY. Not one shop's data is fetched by this branch; it fills
+    //    the picker and stops, and says so.
+    if (supStores.length === 0) {
+      supOneSay('Asking for the store list…', '');
+      var list = await supSend({ action: 'listStores' });
+      if (!list.ok) {
+        supOneSay('The store list did not load — ' + list.text + '. Nothing was fetched.', 'bad');
+      } else {
+        supStores = list.data.stores || [];
+        supOneFillPicker();
+        supOneSay('Store list loaded: ' + supStores.length + ' shops. Pick one and press ' +
+                  '"Load this store" again. Nothing has been read for any shop yet.', 'ok');
+      }
+      supOneBusy = false;
+      if (btn) { btn.disabled = false; }
+      return;
+    }
+
+    var sel = grab('supOneSel');
+    var name = sel ? sel.value : '';
+    if (name === '') {
+      supOneSay('Pick a store first. Nothing was sent.', 'bad');
+      supOneBusy = false;
+      if (btn) { btn.disabled = false; }
+      return;
+    }
+
+    supOneSay('Reading ' + name + '…', '');
+    supFailures = [];
+    supData = {};
+    supOneScope = null;
+    if (el.progress) { el.progress.innerHTML = ''; }
+    if (el.failures) { el.failures.innerHTML = ''; }
+    if (el.browse) { el.browse.classList.add('hidden'); }
+
+    var res = await supSend({ action: 'getStoreSupply', store: name, days: SUP_DAYS });
+    supOneBusy = false;
+    if (btn) { btn.disabled = false; }
+
+    if (!res.ok) {
+      supOneSay(name + ' — FAILED: ' + res.text + '. No other shop was read, and nothing ' +
+                'is shown below.', 'bad');
+      return;
+    }
+
+    supData[name] = res.data;
+    supOneScope = name;
+    supFillStoreList();
+    if (el.sel) { el.sel.value = name; }
+    if (el.browse) { el.browse.classList.remove('hidden'); }
+    supPaintPanel();
+    supOneSay('Loaded ' + name + ' — one shop, one request. No other shop was read.', 'ok');
+  }
+
+  // ─── Wiring. ★★ EXTRA listeners on existing controls. Not one existing
+  //     listener is removed, replaced or re-registered, and supLoadAll is not
+  //     called, wrapped or altered by any line here.
+  (function () {
+    var oneBtn = grab('supOneBtn');
+    if (oneBtn) { oneBtn.addEventListener('click', supOneLoad); }
+
+    // ★ A second listener on the OLD button: the moment an every-store read
+    //   starts, the single-store banner goes. supLoadAll runs exactly as before.
+    var allBtn = grab('supLoadBtn');
+    if (allBtn) {
+      allBtn.addEventListener('click', function () {
+        supOneScope = null;
+        supOneSay('', '');
+        var bar = grab('supOneScopeBar');
+        if (bar) { bar.innerHTML = ''; }
+      });
+    }
+
+    // ★ supPaintPanel returns early when a store has no reply, so its own call
+    //   is not reached on that path; this covers it.
+    var browseSel = grab('supStoreSel');
+    if (browseSel) { browseSel.addEventListener('change', supOneAfterPaint); }
+  })();
 
   // -------------------------------------------------------------------------
   // The way in
