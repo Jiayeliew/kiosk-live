@@ -1085,7 +1085,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build a2c40ab">a2c40ab</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -5824,6 +5824,11 @@ function stopDashboard(){
   background:#fdf7e6;font-size:13px;color:#6b5310;line-height:1.5}
 #supplyView .sup-one-new{margin-top:8px;font-size:13px;color:#333}
 #supplyView .sup-one-sub{color:#666;font-size:12px}
+/* ── THE ONE LINE THAT SAYS WHICH SHOP IS ON SCREEN. The Browse heading and
+   its second picker are gone, so this is the only thing left naming the shop
+   the table below belongs to. It is big on purpose. ── */
+#supplyView .sup-desk-now{margin:0 0 10px;font-size:22px;line-height:1.3;color:#1a1a1a}
+#supplyView .sup-desk-now:empty{display:none}
 #supplyView .sup-table tr.sup-new td{background:#eaf6ec}
 #supplyView .sup-dot{display:inline-block;width:8px;height:8px;border-radius:50%;
   background:#1d6b3a;margin-right:6px;vertical-align:middle}
@@ -5858,10 +5863,13 @@ function stopDashboard(){
     </section>
 
     <section id="supBrowse" class="sup-card hidden">
-      <h2>Browse</h2>
-      <p class="sup-hint">Everything below is already on this device. Switching store or
-        tab sends nothing — reload above when you want fresher figures.</p>
-      <select id="supStoreSel"></select>
+      <!-- ★★ THE BROWSE HEADING, ITS HINT AND THE SECOND STORE PICKER ARE GONE.
+           That picker was not decoration — its .value was the ONLY record of
+           which shop the table below belonged to. The picker in the card above
+           now carries both jobs: which shop to read, and which shop is shown.
+           ★ supLoadAll is untouched. All nineteen replies still sit in supData;
+             this only changes which one of them is painted. -->
+      <h2 id="supDeskNow" class="sup-desk-now"></h2>
       <!-- ★ Filled by supOneAfterPaint: which shop this is, how many of ITS OWN
            rows are stamped with the server's today, and — only after a
            single-store read — that this screen is about one shop and no other. -->
@@ -6814,6 +6822,10 @@ function stopDashboard(){
   var el = {};
   var supStores = [];      // every name listStores gave back
   var supData = {};        // store name -> the getStoreSupply reply, as it came
+  // ★★ WHICH SHOP IS ON SCREEN. This used to live in the Browse <select>'s
+  //    .value and nowhere else; that select is gone, so the fact lives here.
+  //    It names ONE shop out of supData — it never narrows supData itself.
+  var supDeskViewing = '';
   var supFailures = [];    // { store, reason, text } — one entry per shop that did not load
   var supTab = 'stock';
   var supBusy = false;
@@ -6959,7 +6971,10 @@ function stopDashboard(){
     supPaintFailures();
 
     if (loaded > 0) {
-      supFillStoreList();
+      // ★ supOneFillPicker lists every name listStores gave back, loaded or
+      //   not, so a shop that failed is still pickable and still says so.
+      supOneFillPicker();
+      supDeskShow(supDeskFirstLoaded());
       el.browse.classList.remove('hidden');
       supPaintPanel();
     }
@@ -6982,15 +6997,26 @@ function stopDashboard(){
     el.failures.innerHTML = html + '</ul></div>';
   }
 
-  /** Only the shops that actually came back go in the picker. */
-  function supFillStoreList() {
-    var html = '';
+  /**
+   * ★★ POINTS THE SCREEN AT ONE SHOP. Replaces what the Browse <select> used
+   *    to do by holding a .value. supData is NOT touched: every shop that
+   *    loaded is still in hand and one keystroke away.
+   * ★ The picker above is kept in step, so the control that says "read this
+   *   one" and the screen that says "you are looking at this one" can never
+   *   disagree.
+   */
+  function supDeskShow(name) {
+    supDeskViewing = String(name || '');
+    var picker = grab('supOneSel');
+    if (picker && picker.value !== supDeskViewing) { picker.value = supDeskViewing; }
+  }
+
+  /** The first shop that actually came back — where a full read lands. */
+  function supDeskFirstLoaded() {
     for (var i = 0; i < supStores.length; i++) {
-      var name = supStores[i];
-      if (!Object.prototype.hasOwnProperty.call(supData, name)) { continue; }
-      html += '<option value="' + supEsc(name) + '">' + supEsc(name) + '</option>';
+      if (Object.prototype.hasOwnProperty.call(supData, supStores[i])) { return supStores[i]; }
     }
-    el.sel.innerHTML = html;
+    return '';
   }
 
   // -------------------------------------------------------------------------
@@ -7007,9 +7033,16 @@ function stopDashboard(){
   }
 
   function supPaintPanel() {
-    var name = el.sel.value;
+    var name = supDeskViewing;
     var reply = Object.prototype.hasOwnProperty.call(supData, name) ? supData[name] : null;
-    if (reply === null) { el.panel.innerHTML = '<div class="sup-none">Nothing loaded for this store.</div>'; return; }
+    // ★ The Browse select's change listener used to cover this early exit.
+    //   That select is gone, so the repaint hook is called here instead —
+    //   otherwise the big name would keep naming the PREVIOUS shop.
+    if (reply === null) {
+      el.panel.innerHTML = '<div class="sup-none">Nothing loaded for this store.</div>';
+      supOneAfterPaint();
+      return;
+    }
     el.panel.innerHTML = (supTab === 'stock') ? supStockHtml(reply) : supPackHtml(reply);
     supOneAfterPaint();
   }
@@ -7189,11 +7222,16 @@ function stopDashboard(){
   // -------------------------------------------------------------------------
   // ONE STORE, AND WHAT CAME IN TODAY
   //
-  // ★★★ EVERYTHING BELOW IS AN ADDITION. supLoadAll, supSend, supFillStoreList,
-  //     supPackHtml, supPackTable and supStockHtml are not edited, not wrapped
-  //     and not re-registered. The only existing function that changed at all
-  //     is supPaintPanel, which gained ONE line calling supOneAfterPaint at its
-  //     end — the single funnel every repaint already goes through.
+  // ★★★ EVERYTHING BELOW IS AN ADDITION. supSend, supPackHtml, supPackTable and
+  //     supStockHtml are not edited, not wrapped and not re-registered.
+  // ★ SINCE THE BROWSE SHELL CAME OFF this is no longer true of two of them, and
+  //   the note is corrected rather than left standing: supFillStoreList is gone
+  //   (it filled a select that no longer exists) and supLoadAll's tail now calls
+  //   supOneFillPicker + supDeskShow in its place. supLoadAll's FETCHING is
+  //   untouched — same listStores, same loop, same nineteen getStoreSupply calls,
+  //   same supData. Only the choice of which reply gets painted moved.
+  // ★ supPaintPanel reads supDeskViewing instead of a select's .value, and calls
+  //   supOneAfterPaint at its end — the single funnel every repaint goes through.
   // ★★★ NO "HANDLED" STATE EXISTS HERE AND NONE WILL. Nothing remembers what
   //     anybody looked at or clicked; every repaint recomputes from the reply
   //     in hand. A tick would record that the DO desk did something, not that
@@ -7293,9 +7331,14 @@ function stopDashboard(){
     if (picker && supStores.length > 0 && picker.options.length <= 1) { supOneFillPicker(); }
 
     var bar = grab('supOneScopeBar');
-    var name = el.sel ? el.sel.value : '';
+    var name = supDeskViewing;
     var reply = (name !== '' && Object.prototype.hasOwnProperty.call(supData, name))
                   ? supData[name] : null;
+
+    // ★ The only thing on the screen naming the shop the table belongs to.
+    //   It is written on EVERY repaint, so it cannot lag behind the table.
+    var now = grab('supDeskNow');
+    if (now) { now.textContent = name; }
 
     if (bar) {
       if (reply === null) {
@@ -7381,8 +7424,7 @@ function stopDashboard(){
 
     supData[name] = res.data;
     supOneScope = name;
-    supFillStoreList();
-    if (el.sel) { el.sel.value = name; }
+    supDeskShow(name);
     if (el.browse) { el.browse.classList.remove('hidden'); }
     supPaintPanel();
     supOneSay('Loaded ' + name + ' — one shop, one request. No other shop was read.', 'ok');
@@ -7407,10 +7449,19 @@ function stopDashboard(){
       });
     }
 
-    // ★ supPaintPanel returns early when a store has no reply, so its own call
-    //   is not reached on that path; this covers it.
-    var browseSel = grab('supStoreSel');
-    if (browseSel) { browseSel.addEventListener('change', supOneAfterPaint); }
+    // ★★ THE PICKER ABOVE IS NOW THE WAY TO SWITCH SHOPS. Changing it repaints
+    //    from supData — no request is sent, exactly as the old Browse select
+    //    behaved. "Load this store" still needs its own button press.
+    // ★ An empty pick ("— pick a store —") is not a shop, so it does NOT blank
+    //   the screen: what is on the table stays on the table and keeps its name.
+    var deskSel = grab('supOneSel');
+    if (deskSel) {
+      deskSel.addEventListener('change', function () {
+        if (deskSel.value === '' || deskSel.value === supDeskViewing) { return; }
+        supDeskShow(deskSel.value);
+        supPaintPanel();
+      });
+    }
   })();
 
   // -------------------------------------------------------------------------
@@ -7426,7 +7477,7 @@ function stopDashboard(){
   window.showSupplyView = function (store) {
     el.view = grab('supplyView'); el.load = grab('supLoadBtn');
     el.progress = grab('supProgress'); el.failures = grab('supFailures');
-    el.browse = grab('supBrowse'); el.sel = grab('supStoreSel');
+    el.browse = grab('supBrowse');
     el.stockBtn = grab('supStockBtn'); el.packBtn = grab('supPackBtn');
     el.panel = grab('supPanel'); el.logout = grab('supLogoutBtn');
 
@@ -7436,7 +7487,6 @@ function stopDashboard(){
     if (!el.view.dataset.wired) {
       el.view.dataset.wired = '1';
       el.load.addEventListener('click', supLoadAll);
-      el.sel.addEventListener('change', supPaintPanel);
       el.stockBtn.addEventListener('click', function () { supSetTab('stock'); });
       el.packBtn.addEventListener('click', function () { supSetTab('packaging'); });
       el.logout.addEventListener('click', function () { window.endSession(); });
