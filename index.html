@@ -1085,7 +1085,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 663c56b">663c56b</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -5849,6 +5849,13 @@ function stopDashboard(){
       <p class="sup-hint">Reads every store's most recent stock count and the packaging
         it has asked for in the last 14 days. Nothing here writes anything, anywhere —
         this screen only looks.</p>
+      <!-- *** THE PACKAGING NOTICE, ABOVE THE THREE CONTROLS ON PURPOSE. It is
+           the first thing on the desk and it fills itself on the way in, so the
+           screen has already said who asked for packaging today before anybody
+           has pressed Load all stores, opened the picker or pressed Load this
+           store. Those three are untouched and still do exactly what they did.
+           Its whole behaviour is in the reqm-* block at the foot of this file. -->
+      <div id="reqmBar" class="reqm-none">Reading the packaging copy&hellip;</div>
       <button id="supLoadBtn">Load all stores</button>
       <!-- ★★ BESIDE THE OLD BUTTON, NEVER IN PLACE OF IT. "Load all stores"
            and supLoadAll behave exactly as they did; this second control sends
@@ -7430,6 +7437,14 @@ function stopDashboard(){
     supOneSay('Loaded ' + name + ' — one shop, one request. No other shop was read.', 'ok');
   }
 
+  // ★★ HANDED OUT UNDER A NEW NAME, AND supOneLoad ITSELF IS NOT TOUCHED. The
+  //    packaging notice at the foot of this file has to switch the picker and
+  //    read one shop, and the only honest way to do that is to call the SAME
+  //    function the "Load this store" button calls rather than write a second
+  //    copy of it. This line adds a reference; it changes nothing about the
+  //    function, its listeners or the button.
+  window.reqmSupOneLoad = supOneLoad;
+
   // ─── Wiring. ★★ EXTRA listeners on existing controls. Not one existing
   //     listener is removed, replaced or re-registered, and supLoadAll is not
   //     called, wrapped or altered by any line here.
@@ -7729,6 +7744,349 @@ function stopDashboard(){
     var bar = navGrab();
     if (bar) { bar.innerHTML = ''; bar.classList.add('hidden'); }
     if (typeof navPrevEnd === 'function') { navPrevEnd(); }
+  };
+})();
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     THE PACKAGING NOTICE — the DO desk's one automatic read. ADDITIVE: a new
+     <style>, a new <script> and one new element id, all reqm-*. Not one
+     existing rule, listener or function on this page is edited by anything
+     below, and the LAST thing in the file on purpose — window.showSupplyView
+     and window.kdPaneShown are wrapped here, so this wrapper must be installed
+     after the nav bar's, exactly the idiom the products pane uses.
+     ★ No external resource, no localStorage, no sessionStorage, no timer.
+     ════════════════════════════════════════════════════════════════════════ -->
+<style>
+#reqmBar{margin:0 0 14px;padding:12px 15px;border-radius:10px;border:1px solid #d8d8d8;
+  background:#fafafa;font-size:14px;line-height:1.55;color:#1a1a1a}
+#reqmBar.reqm-some{background:#eaf6ec;border-color:#bfe0c7}
+#reqmBar.reqm-none{background:#fafafa;border-color:#d8d8d8}
+#reqmBar.reqm-broken{background:#fdecea;border-color:#f5c2bd}
+#reqmBar .reqm-head{font-weight:700}
+#reqmBar .reqm-sub{margin-top:5px;font-size:12px;color:#555}
+#reqmBar .reqm-stale{margin-top:5px;font-size:12px;color:#8a5a00;font-weight:600}
+#reqmBar .reqm-what{margin-top:6px;font-size:12px;color:#555}
+#reqmBar button.reqm-shop{font-family:inherit;font-size:13.5px;font-weight:700;
+  padding:2px 8px;margin:3px 4px 0 0;border:1px solid #bfe0c7;border-radius:999px;
+  background:#fff;color:#1d6b3a;cursor:pointer}
+#reqmBar button.reqm-shop:hover{background:#eaf6ec}
+#reqmBar button.reqm-shop[disabled]{opacity:.55;cursor:default}
+</style>
+<script>
+(function () {
+  'use strict';
+
+  // ★★ NOTHING IS REMEMBERED BETWEEN PAINTS AND THERE IS NO READ/UNREAD STATE.
+  //    This module holds no list of shops it has "already shown", no ticked
+  //    flag, no seen-set — every paint recomputes the whole line from the reply
+  //    in hand. A desk that greyed out what somebody had glanced at would be a
+  //    desk that hides tonight's ask because this morning's looked like it.
+  // ★ The one variable kept is an in-flight guard, so two entries into the pane
+  //   a second apart cannot start two requests. It is cleared when the request
+  //   finishes, and it is not a memory of anything.
+  var reqmBusy = false;
+
+  function reqmGrab() { return document.getElementById('reqmBar'); }
+
+  /** Sheet text into HTML text. Every value printed here goes through it. */
+  function reqmEsc(v) {
+    return String((v === null || v === undefined) ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function reqmSay(cssClass, html) {
+    var bar = reqmGrab();
+    if (!bar) { return; }
+    bar.className = cssClass;
+    bar.innerHTML = html;
+  }
+
+  /**
+   * ★★★ THE SERVER'S TODAY, COMPARED AS TEXT. `today` is the reply's own
+   *     server_date — 'yyyy-MM-dd' built from the script's clock in
+   *     Asia/Kuala_Lumpur — and a row is today's when the FIRST TEN CHARACTERS
+   *     of its Mirror_Req_At are that same string. No Date is constructed here,
+   *     nothing is subtracted from anything, and the browser's clock and
+   *     timezone never enter it (KD-073). A tablet left on the wrong timezone,
+   *     or one whose battery clock has drifted a day, reads exactly the same
+   *     line as every other tablet.
+   * ★★★ NOTHING IS DE-DUPLICATED OR FOLDED. The same shop asking for the same
+   *     box twice tonight is two rows and is counted twice: every shop reports
+   *     every evening, and a screen that merged repeats would quietly halve a
+   *     standing order.
+   * ★★ ONE COUNT PER SHOP, AND NO COUNT ACROSS SHOPS. `n` is that shop's own
+   *    number of lines. There is deliberately no grand total anywhere in this
+   *    module — see the note over reqmPaint.
+   * ★ First-seen order, which is the tab's order, so the list does not reshuffle
+   *   itself between reads.
+   */
+  function reqmTodayByStore(rows, today) {
+    var order = [];
+    var seen = {};
+    if (!(rows instanceof Array) || typeof today !== 'string' || today === '') {
+      return order;
+    }
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row || typeof row.req_at !== 'string') { continue; }
+      if (row.req_at.substring(0, 10) !== today) { continue; }
+      var name = (typeof row.store === 'string' && row.store !== '') ? row.store : '';
+      if (name === '') { continue; }
+      if (!Object.prototype.hasOwnProperty.call(seen, name)) {
+        seen[name] = { store: name, n: 0 };
+        order.push(seen[name]);
+      }
+      seen[name].n++;
+    }
+    return order;
+  }
+
+  /**
+   * The two stamps, in the words this project uses for them.
+   *
+   * ★★★ "as of", NEVER "last updated". The copy is as of its OLDEST row, because
+   *     rebuildHqReqLines runs shop by shop and a shop whose rebuild failed KEEPS
+   *     the rows it already had (KD-083 §3, KD-091). "Last updated" would name
+   *     the newest row and quietly promise that everything under it is that
+   *     fresh.
+   * ★★ WHEN THE TWO DIFFER, BOTH ARE SAID OUT LOUD, and the sentence says what
+   *    the difference MEANS: some shop's rows on this copy are older ones that
+   *    were carried across rather than re-copied.
+   */
+  function reqmStampHtml(data) {
+    var oldest = (typeof data.as_of === 'string' && data.as_of !== '') ? data.as_of : '';
+    var newest = (typeof data.as_of_newest === 'string' && data.as_of_newest !== '')
+                   ? data.as_of_newest : '';
+    if (oldest === '') {
+      return '<div class="reqm-sub">This copy carries no readable stamp, so there is no ' +
+             '"as of" to give.</div>';
+    }
+    if (newest === '' || newest === oldest) {
+      return '<div class="reqm-sub">Reading the HQ_REQ copy as of ' + reqmEsc(oldest) + '.</div>';
+    }
+    return '<div class="reqm-sub">Reading the HQ_REQ copy as of ' + reqmEsc(oldest) + '.</div>' +
+           '<div class="reqm-stale">The newest row on this copy is stamped ' +
+           reqmEsc(newest) + ', and the oldest ' + reqmEsc(oldest) + ' — so at least one ' +
+           'shop\'s rows here are an older copy that was kept, not re-copied. The copy is ' +
+           'only as of the older of the two.</div>';
+  }
+
+  /**
+   * ★★ WHAT THESE FIGURES ARE, SAID EVERY TIME. Written on the quiet line and
+   *    on the busy one, because the number beside a shop's name is the amount a
+   *    promoter ASKED the factory for and nothing further. This module says
+   *    nothing whatever about what has since become of any of it, and it must
+   *    not be read as though it did.
+   */
+  function reqmWhatHtml() {
+    return '<div class="reqm-what">These are lines a promoter typed asking the factory for ' +
+           'packaging. This bar says who asked and how many lines they asked on — nothing ' +
+           'here is a decision, and nothing here describes what has happened to any of it ' +
+           'since.</div>';
+  }
+
+  /**
+   * ★★★ EVERY NUMBER ON THIS BAR IS COUNTED HERE, IN THE PAGE (KD-090). The
+   *     server returns HQ_REQ row for row and not one figure on it; the "N
+   *     shop(s)" is the length of the per-shop list this file just built, and
+   *     each shop's own `n` is the length of its own slice. There is deliberately
+   *     NO total across shops — no "12 lines today" — because a single number
+   *     spanning shops is the one figure a packer could act on without knowing
+   *     which shop it belonged to.
+   * ★★ NOTHING IS EVER SHOWN AS A ZERO THAT WAS REALLY A FAILED READ. A copy
+   *     that could not be read takes the broken branch above this one and says
+   *     so; only a copy that WAS read can print "nobody asked".
+   */
+  function reqmPaint(data) {
+    var today = (typeof data.server_date === 'string') ? data.server_date : '';
+    var shops = reqmTodayByStore(data.rows, today);
+
+    if (shops.length === 0) {
+      reqmSay('reqm-none',
+        '<div class="reqm-head">Nobody has asked for packaging today.</div>' +
+        '<div class="reqm-sub">No row on the HQ_REQ copy carries the server\'s date ' +
+        (today === '' ? '(and the reply carried no server date)' : reqmEsc(today)) +
+        '. Earlier days are still on the copy; this line is only about today.</div>' +
+        reqmStampHtml(data) + reqmWhatHtml());
+      return;
+    }
+
+    var chips = '';
+    for (var i = 0; i < shops.length; i++) {
+      chips += '<button type="button" class="reqm-shop" data-reqm-store="' +
+               reqmEsc(shops[i].store) + '">' + reqmEsc(shops[i].store) + ' ' +
+               reqmEsc(shops[i].n) + '</button>';
+    }
+
+    reqmSay('reqm-some',
+      '<div class="reqm-head">Today ' + reqmEsc(shops.length) + ' shop(s) asked for ' +
+      'packaging &mdash;</div>' +
+      '<div>' + chips + '</div>' +
+      '<div class="reqm-sub">The number beside a shop is that shop\'s own line count for ' +
+      reqmEsc(today) + ', the server\'s date. Tap a shop to load it below.</div>' +
+      reqmStampHtml(data) + reqmWhatHtml());
+  }
+
+  /**
+   * ★★★ A COPY THAT COULD NOT BE READ IS NEVER PAINTED AS A QUIET ZERO. "Nobody
+   *     asked today" and "I could not read the copy" are different facts, and on
+   *     a desk that cuts tonight's delivery the second one dressed up as the
+   *     first is how a shop gets nothing. The reason code the server sent is
+   *     printed as it came, and the sentence names the one thing that fixes it.
+   */
+  function reqmBroken(why, detail) {
+    reqmSay('reqm-broken',
+      '<div class="reqm-head">The packaging copy could not be read &mdash; ' +
+      reqmEsc(why) + '</div>' +
+      '<div class="reqm-sub">' + reqmEsc(detail) + '</div>' +
+      '<div class="reqm-stale">This is NOT a quiet zero. It does not say nobody asked ' +
+      'today &mdash; it says nothing was read, so today is unknown from here. Somebody has ' +
+      'to run rebuildHqReqLines() on HQ DATA (and setupHqData() first if the HQ_REQ tab is ' +
+      'missing altogether), then come back to this screen.</div>');
+  }
+
+  /** The server's closed vocabulary, in plain English. */
+  function reqmWhyText(code) {
+    if (code === 'NO_TAB') {
+      return 'HQ DATA has no HQ_REQ tab at all. Run setupHqData(), then rebuildHqReqLines().';
+    }
+    if (code === 'HEADER_MISMATCH') {
+      return 'HQ_REQ exists but its header row is not the one the reader expects, so no ' +
+             'column could be resolved by name.';
+    }
+    if (code === 'EMPTY') {
+      return 'HQ_REQ exists and its header is right, but there is not one row under it. ' +
+             'Nothing has been copied into it yet.';
+    }
+    return 'the reader gave the code above and nothing else.';
+  }
+
+  /**
+   * ★★★ ONE ACTION, ONE REQUEST, NO LOOP, NO SECOND READ. This sends
+   *     getReqMirror and nothing else. It does NOT send listStores, it does NOT
+   *     open any store file, and it does not run over a list of shops — the
+   *     whole reason the HQ_REQ mirror exists is that this line costs one read
+   *     of one tab instead of nineteen files.
+   * ★★ IT RUNS ON THE WAY IN, BEFORE ANYBODY PRESSES ANYTHING. That is the
+   *    point: the desk has to speak first. The existing "Load all stores",
+   *    "Load this store" and the picker are untouched and still do exactly what
+   *    they did.
+   */
+  async function reqmGo() {
+    var bar = reqmGrab();
+    if (!bar || reqmBusy) { return; }
+    reqmBusy = true;
+    reqmSay('reqm-none', '<div class="reqm-head">Reading the packaging copy&hellip;</div>' +
+                         '<div class="reqm-sub">One read of the HQ_REQ copy. No store file ' +
+                         'is being opened.</div>');
+
+    var res = await window.kdSend({ action: 'getReqMirror' });
+    reqmBusy = false;
+
+    if (res.verdict !== 'ok') {
+      var text = (res.verdict === 'offline')
+        ? 'the backend could not be reached.'
+        : ((res.verdict === 'season_ended' || res.verdict === 'dead')
+             ? 'the session has expired; log in again.'
+             : 'the request was refused' +
+               ((res.data && typeof res.data.reason === 'string')
+                  ? ' (' + res.data.reason + ').'
+                  : ' without saying why.'));
+      reqmBroken(res.verdict, text);
+      return;
+    }
+
+    var data = res.data || {};
+    if (typeof data.req_mirror_unavailable === 'string') {
+      reqmBroken(data.req_mirror_unavailable, reqmWhyText(data.req_mirror_unavailable));
+      return;
+    }
+    reqmPaint(data);
+  }
+
+  /**
+   * A shop name on the bar, pressed. ★★ THE SWITCH IS THE EXISTING ONE: the
+   * picker above gets the name and supOneLoad — the very function the "Load this
+   * store" button calls — does the read. There is no second copy of the
+   * switching logic and no second getStoreSupply written here.
+   * ★★ THE FIRST PRESS OF A SESSION MAY HAVE NO PICKER TO SET, because the store
+   *    list has never been fetched. supOneLoad's own first-press behaviour
+   *    handles exactly that — it fetches the NAMES only, reads no shop and says
+   *    so — so it is called once to fill the picker and then once more to read.
+   *    That listStores call belongs to the button the person just pressed; the
+   *    automatic read above never makes it.
+   */
+  function reqmHasOption(sel, name) {
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === name) { return true; }
+    }
+    return false;
+  }
+
+  async function reqmPick(name, button) {
+    var sel = document.getElementById('supOneSel');
+    if (!sel || typeof window.reqmSupOneLoad !== 'function') { return; }
+    if (button) { button.disabled = true; }
+
+    if (!reqmHasOption(sel, name)) { await window.reqmSupOneLoad(); }
+    if (!reqmHasOption(sel, name)) {
+      if (button) { button.disabled = false; }
+      return;
+    }
+    sel.value = name;
+    await window.reqmSupOneLoad();
+    if (button) { button.disabled = false; }
+  }
+
+  // ★★ ONE LISTENER ON THE BAR ITSELF, not one per chip. The bar is rebuilt from
+  //    scratch on every paint, and per-chip listeners would be re-registered
+  //    every time.
+  (function () {
+    var bar = reqmGrab();
+    if (!bar) { return; }
+    bar.addEventListener('click', function (ev) {
+      var hit = ev.target;
+      while (hit && hit !== bar && !hit.getAttribute) { hit = hit.parentNode; }
+      while (hit && hit !== bar && !hit.getAttribute('data-reqm-store')) { hit = hit.parentNode; }
+      if (!hit || hit === bar) { return; }
+      reqmPick(hit.getAttribute('data-reqm-store'), hit);
+    });
+  })();
+
+  // ─── The way in. ★★ WRAPPED, NEVER EDITED — the idiom the products pane and
+  //     the nav bar already use on these three.
+  //
+  // ★★★ BOTH DOORS, BECAUSE THERE ARE TWO. FACTORY never sees a nav bar (one
+  //     pane is not a choice), so showSessionView calls showSupplyView straight
+  //     after login and that is FACTORY's only way in. HQ gets a bar and reaches
+  //     the desk by pressing its tab, which is kdPaneShown('supply'). Wrapping
+  //     only one of the two would leave the bar silent for exactly one of the
+  //     two roles allowed to read it.
+  // ★ Re-entering repaints from a fresh read. There is no "already loaded once"
+  //   short-circuit on purpose: the whole value of the line is that it is
+  //   current, and it costs one read of one tab.
+  var reqmPrevSupply = window.showSupplyView;
+  window.showSupplyView = function (store) {
+    if (typeof reqmPrevSupply === 'function') { reqmPrevSupply(store); }
+    reqmGo();
+  };
+
+  var reqmPrevShown = window.kdPaneShown;
+  window.kdPaneShown = function (key) {
+    if (typeof reqmPrevShown === 'function') { reqmPrevShown(key); }
+    if (key === 'supply') { reqmGo(); }
+  };
+
+  // ★★ A NEW LOGIN MUST NOT SEE THE LAST ONE'S LINE. There is no cache to clear
+  //    — the bar holds only what it last printed — so this puts it back to the
+  //    words it was born with.
+  var reqmPrevEnd = window.endSession;
+  window.endSession = function () {
+    reqmBusy = false;
+    reqmSay('reqm-none', 'Reading the packaging copy&hellip;');
+    if (typeof reqmPrevEnd === 'function') { reqmPrevEnd(); }
   };
 })();
 </script>
