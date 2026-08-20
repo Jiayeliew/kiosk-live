@@ -1085,7 +1085,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build 887f9ac">887f9ac</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -2455,7 +2455,7 @@ async function supPhotoToggle(i){
     // ★ mime comes back from Drive; escaped because it lands in an attribute.
     box.innerHTML='<img alt="" src="data:'+feedEscape(res.data.mime)+';base64,'+
                   res.data.bytes_base64+'" '+
-                  'style="max-width:100%;display:block;margin-top:10px;border-radius:10px;">';
+                  'style="max-width:180px;display:block;margin-top:10px;border-radius:10px;">';
     supPhotoOpen[i]=true;
     return;
   }
