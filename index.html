@@ -1085,7 +1085,7 @@
          that does not exist where the tablet loaded the file from (KB-060).
          ★ A screen reading `dev` means somebody is looking at an unpublished
          copy, which is true and useful; a stale hash would be a lie. -->
-    <span class="build-tag" id="buildTag" title="build bac44ca">bac44ca</span>
+    <span class="build-tag" id="buildTag" title="build dev">dev</span>
 </div>
 
 <script>
@@ -2309,6 +2309,10 @@ async function autoCompleteStockTask(){
 //   category itself.
 var supItems=null;
 
+/** ★ KB-132. Which cards have their picture open. Deleted on close, never
+ *  set to false — a key that is gone is a card that is holding nothing. */
+var supPhotoOpen = {};
+
 /**
  * The whole page. getPackaging decides what may be asked for — this file does
  * not, and must not: a second opinion here would draw a line submitPackaging
@@ -2352,11 +2356,27 @@ async function loadSupplyTab(){
     var it=supItems[i];
     // ★ Escaped: product names come out of a sheet somebody types by hand
     //   (feedEscape's reasoning at the activity feed).
-    html+='<div class="sup-card" id="supCard-'+i+'">'
+    // ★★ KB-132. flex-wrap is inline ON THIS CARD and the .sup-card rule in the
+    //    <style> block is untouched, so nothing else that draws a card moves.
+    //    Without it the photo would become a third column and squeeze the name.
+    html+='<div class="sup-card" id="supCard-'+i+'" style="flex-wrap:wrap;">'
         +   '<div class="sup-info">'
         +     '<div class="sup-name">'+feedEscape(it.product||it.sku)+'</div>'
         +     '<div class="sup-meta">'+feedEscape(it.sku)+(it.unit?' · '+feedEscape(it.unit):'')+'</div>'
         +   '</div>'
+        // ★★ THE SKU IS NOT IN THIS STRING. Only the loop index goes into the
+        //    onclick; supPhotoToggle reads supItems[i].sku out of the array it
+        //    is already holding. A SKU is typed by hand into a sheet, so it can
+        //    contain a quote or an ampersand — concatenated into an HTML
+        //    attribute that closes the attribute early and the rest of the card
+        //    becomes markup. feedEscape would not save it either: it escapes for
+        //    TEXT, and this would be a JS string inside an HTML attribute, two
+        //    layers of quoting deep. Passing the index passes no data at all.
+        +   '<button class="sup-clear-btn" id="supPhotoBtn-'+i+'" '
+        +     'onclick="supPhotoToggle('+i+')">Photo  看图</button>'
+        // ★ display:none until there is something to show. An empty flex item
+        //   would still collect the card's 14px gap and every card would grow.
+        +   '<div id="supPhoto-'+i+'" style="display:none;flex-basis:100%;"></div>'
         +   '<input class="sup-qty" id="supQty-'+i+'" type="number" inputmode="numeric" '
         +     'min="1" step="1" placeholder="—" oninput="supQtyChanged('+i+')">'
         + '</div>';
@@ -2365,6 +2385,92 @@ async function loadSupplyTab(){
 
   // ★ After the boxes exist, never before: the prefill writes into them.
   supApplyPrefill(res.data.last_request);
+}
+
+/**
+ * Show or hide one packing item's picture — KB-132.
+ *
+ * ★★ THE SKU IS READ HERE, OUT OF supItems, AND NEVER OFF THE PAGE. The card
+ *    carries only its index. A SKU comes off a hand-typed sheet and belongs in
+ *    a JS variable, not in an HTML attribute somebody's apostrophe can close.
+ * ★★ CLOSING THROWS THE PICTURE AWAY. innerHTML is emptied and the entry is
+ *    deleted, so a promoter who opens twenty items and closes them is holding
+ *    no more markup than when he started. A photo can be a quarter of a
+ *    megabyte of base64; twenty left in the DOM is a page that dies on the
+ *    tablet in the middle of a shift.
+ * ★ The button is disabled for the whole round trip and re-enabled on EVERY
+ *   path out — hit, miss and failure alike. A button that stays greyed out
+ *   after a failure reads as broken, and a live one invites a double tap that
+ *   would fire a second request while the first is still in the air.
+ * ★ This page is in English (its own words: 'Packing Supplies Request',
+ *   'Loading items…', 'No packing supplies are set up for this shop yet.'), so
+ *   these four strings are English too. No mixed labels.
+ */
+async function supPhotoToggle(i){
+  var box=document.getElementById("supPhoto-"+i);
+  var btn=document.getElementById("supPhotoBtn-"+i);
+  if(!box || !btn) return;
+
+  // --- already open: drop it and go home --------------------------------
+  if(supPhotoOpen[i]){
+    box.innerHTML="";
+    box.style.display="none";
+    delete supPhotoOpen[i];
+    btn.textContent="Photo  看图";
+    return;
+  }
+
+  if(!supItems || !supItems[i]) return;
+  var sku=supItems[i].sku;
+
+  btn.disabled=true;
+  btn.textContent="Loading…";
+  box.style.display="block";
+  // ★ Reusing .sup-meta rather than inventing a class: it is this page's small
+  //   muted line already, and no <style> block was added.
+  box.innerHTML='<div class="sup-meta" style="margin-top:10px;">Loading…</div>';
+
+  var res;
+  try{
+    res=await kdSend({action:"getPackagingPhoto", sku:sku});
+  }catch(err){
+    // ★ An exception is not a verdict. It lands on the same visible sentence a
+    //   refusal does, because to the promoter they are the same event.
+    res=null;
+  }
+
+  btn.disabled=false;
+  btn.textContent="Photo  看图";
+
+  // --- (c) failed or threw ----------------------------------------------
+  if(!res || res.verdict!=="ok" || !res.data){
+    box.innerHTML='<div class="sup-meta" style="margin-top:10px;">Could not load, try again</div>';
+    supPhotoOpen[i]=true;
+    if(res){ kdFail(res,"Loading the item photo"); }
+    return;
+  }
+
+  // --- (a) a real picture ------------------------------------------------
+  if(res.data.bytes_base64){
+    // ★ mime comes back from Drive; escaped because it lands in an attribute.
+    box.innerHTML='<img alt="" src="data:'+feedEscape(res.data.mime)+';base64,'+
+                  res.data.bytes_base64+'" '+
+                  'style="max-width:100%;display:block;margin-top:10px;border-radius:10px;">';
+    supPhotoOpen[i]=true;
+    return;
+  }
+
+  // --- (b) ok, but there is no picture -----------------------------------
+  //
+  // ★★ capped means the server stopped scanning at its limit, so "no photo"
+  //    might be "I did not look far enough". Saying only the first half would
+  //    have somebody re-upload a file that is already there.
+  var msg="No photo yet  还没有照片";
+  if(res.data.capped===true){
+    msg+=" — the scan has a limit and stopped early, so it may be there. Tell HQ.";
+  }
+  box.innerHTML='<div class="sup-meta" style="margin-top:10px;">'+feedEscape(msg)+'</div>';
+  supPhotoOpen[i]=true;
 }
 
 /**
